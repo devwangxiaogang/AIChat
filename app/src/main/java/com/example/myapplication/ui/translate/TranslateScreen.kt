@@ -1,83 +1,137 @@
 package com.example.myapplication.ui.translate
 
+import android.Manifest
 import android.app.Activity
+import android.content.ClipData
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.pm.PackageManager
 import android.view.WindowManager
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import android.Manifest
-import android.content.ClipData
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.toClipEntry
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.example.myapplication.data.local.TranslationEntity
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.res.stringResource
 import com.example.myapplication.R
+import com.example.myapplication.data.local.TranslationEntity
 import com.example.myapplication.domain.model.SpeechLanguage
 import com.example.myapplication.domain.model.VoiceChoice
 import com.example.myapplication.domain.model.liveLanguages
 import com.example.myapplication.domain.model.livePairError
 import com.example.myapplication.domain.model.textLanguages
 import com.example.myapplication.domain.model.translationModels
+import com.example.myapplication.ui.chat.SpeechInput
+import com.example.myapplication.ui.chat.VoicePhase
 import com.example.myapplication.ui.languageLabel
+import com.example.myapplication.ui.shell.AppSection
+import com.example.myapplication.ui.shell.SectionScaffold
 import com.example.myapplication.ui.shortLanguageLabel
 import com.example.myapplication.ui.storedVoiceLabel
 import com.example.myapplication.ui.translationModelLabel
-import com.example.myapplication.ui.shell.AppSection
-import com.example.myapplication.ui.shell.SectionScaffold
-import kotlinx.coroutines.launch
-import androidx.compose.runtime.rememberCoroutineScope
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -91,30 +145,44 @@ fun TranslateScreen(
     val scope = rememberCoroutineScope()
     var picking by remember { mutableStateOf<PickTarget?>(null) }
     var browse by remember { mutableStateOf<RecordBrowse?>(null) }
+    val liveActive = state.livePhase == LivePhase.Connecting || state.livePhase == LivePhase.Listening
     val recordKind = if (state.tab == TranslateTab.Live) "LIVE" else "TEXT"
     val tabRecords = state.records.filter { it.kind == recordKind }
     LaunchedEffect(state.tab) { browse = null }
     LaunchedEffect(state.livePhase) {
-        if (state.livePhase == LivePhase.Connecting || state.livePhase == LivePhase.Listening) browse = null
+        if (liveActive) browse = null
     }
-    BackHandler(enabled = browse != null) {
-        browse = when (val current = browse) {
-            is RecordBrowse.Detail -> if (current.fromAll) RecordBrowse.All else null
-            else -> null
+    BackHandler(enabled = browse != null || liveActive) {
+        when {
+            browse != null -> {
+                browse = when (val current = browse) {
+                    is RecordBrowse.Detail -> if (current.fromAll) RecordBrowse.All else null
+                    else -> null
+                }
+            }
+            liveActive -> viewModel.stopLive()
         }
     }
     val openRecordId = (browse as? RecordBrowse.Detail)?.id
     DisposableEffect(openRecordId) {
         onDispose { if (openRecordId != null) viewModel.stopRecordSpeech() }
     }
+    var pendingTextMic by remember { mutableStateOf(false) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) viewModel.toggleLive() else viewModel.denyMicrophone()
+        when {
+            !granted && pendingTextMic -> {
+                pendingTextMic = false
+                viewModel.denyTextMicrophone()
+            }
+            !granted -> viewModel.denyMicrophone()
+            pendingTextMic -> pendingTextMic = false
+            else -> viewModel.toggleLive()
+        }
     }
     val view = LocalView.current
     DisposableEffect(state.livePhase) {
         val window = view.context.findActivity().window
-        val awake = state.livePhase == LivePhase.Connecting || state.livePhase == LivePhase.Listening
-        if (awake) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (liveActive) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         onDispose { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
     DisposableEffect(Unit) {
@@ -127,111 +195,121 @@ fun TranslateScreen(
             if (section != AppSection.Translate) viewModel.leaveLive()
             onNavigate(section)
         },
+        actions = {
+            if (browse == null) {
+                IconButton(
+                    onClick = { if (!liveActive) browse = RecordBrowse.All },
+                    enabled = !liveActive,
+                ) {
+                    Icon(Icons.Filled.History, contentDescription = stringResource(R.string.history))
+                }
+            }
+        },
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            PrimaryTabRow(selectedTabIndex = if (state.tab == TranslateTab.Live) 0 else 1) {
-                Tab(selected = state.tab == TranslateTab.Live, onClick = { viewModel.selectTab(TranslateTab.Live) }, text = { Text(stringResource(R.string.tab_live)) })
-                Tab(selected = state.tab == TranslateTab.Text, onClick = { viewModel.selectTab(TranslateTab.Text) }, text = { Text(stringResource(R.string.tab_text)) })
+            if (browse == null) {
+                TranslateModeSwitcher(
+                    selected = state.tab,
+                    onSelect = viewModel::selectTab,
+                )
             }
-            if (browse != null) {
-                RecordBrowser(
-                    browse = browse!!,
-                    records = tabRecords,
-                    speakingKey = state.speakingKey,
-                    message = state.message,
-                    offerLocalFor = state.offerLocalFor,
-                    onBack = {
-                        browse = when (val current = browse) {
-                            is RecordBrowse.Detail -> if (current.fromAll) RecordBrowse.All else null
-                            else -> null
-                        }
-                    },
-                    onOpen = { record -> browse = RecordBrowse.Detail(record.id, fromAll = browse is RecordBrowse.All) },
-                    onCopy = { text ->
-                        scope.launch {
-                            clipboard.setClipEntry(ClipData.newPlainText(clipLabel, text).toClipEntry())
-                        }
-                    },
-                    onSpeak = { record -> viewModel.speak("record:${record.id}", record.targetText) },
-                    onUseLocal = { text ->
-                        viewModel.speak("local-once", text, forceLocal = true)
-                        viewModel.dismissMessage()
-                    },
-                    onDelete = viewModel::deleteRecord,
-                    onReuse = { record ->
-                        viewModel.reuseTextRecord(record)
-                        browse = null
-                    },
-                    modifier = Modifier.weight(1f),
-                )
-            } else if (state.tab == TranslateTab.Live) {
-                LiveStage(
-                    state = state,
-                    records = tabRecords,
-                    onPickSource = { picking = PickTarget.LiveSource },
-                    onPickTarget = { picking = PickTarget.LiveTarget },
-                    onVoice = viewModel::selectLiveVoice,
-                    onSwap = viewModel::swapLiveLanguages,
-                    onToggle = {
-                        if (state.livePhase == LivePhase.Connecting || state.livePhase == LivePhase.Listening) {
-                            viewModel.stopLive()
-                        } else {
-                            permission.launch(Manifest.permission.RECORD_AUDIO)
-                        }
-                    },
-                    onCopy = { text ->
-                        scope.launch {
-                            clipboard.setClipEntry(ClipData.newPlainText(clipLabel, text).toClipEntry())
-                        }
-                    },
-                    onSpeak = { text -> viewModel.speak("live-caption", text) },
-                    onOpenRecord = { record -> browse = RecordBrowse.Detail(record.id, fromAll = false) },
-                    onOpenAll = { browse = RecordBrowse.All },
-                )
-            } else {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        TextPane(
-                            state = state,
-                            onPickSource = { picking = PickTarget.TextSource },
-                            onPickTarget = { picking = PickTarget.TextTarget },
-                            onSwap = viewModel::swapTextLanguages,
-                            onPickModel = { picking = PickTarget.Model },
-                            onInput = viewModel::updateInput,
-                            onTranslate = viewModel::translate,
-                            onCopy = {
-                                scope.launch {
-                                    clipboard.setClipEntry(ClipData.newPlainText(clipLabel, state.output).toClipEntry())
-                                }
-                            },
-                            onSpeak = { viewModel.speak("text-output", state.output) },
-                        )
-                        state.message?.let { message ->
-                            Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-                            if (state.offerLocalFor != null) {
-                                TextButton(onClick = {
-                                    viewModel.speak("local-once", state.offerLocalFor, forceLocal = true)
-                                    viewModel.dismissMessage()
-                                }) { Text(stringResource(R.string.use_local_once)) }
-                            }
-                        }
-                    }
-                    HistoryPreview(
+            AnimatedVisibility(
+                visible = true,
+                enter = fadeIn(tween(150)),
+                exit = fadeOut(tween(150)),
+            ) {
+                if (browse != null) {
+                    RecordBrowser(
+                        browse = browse!!,
                         records = tabRecords,
-                        onOpen = { record -> browse = RecordBrowse.Detail(record.id, fromAll = false) },
-                        onOpenAll = { browse = RecordBrowse.All },
+                        speakingKey = state.speakingKey,
+                        message = state.message,
+                        offerLocalFor = state.offerLocalFor,
+                        onBack = {
+                            browse = when (val current = browse) {
+                                is RecordBrowse.Detail -> if (current.fromAll) RecordBrowse.All else null
+                                else -> null
+                            }
+                        },
+                        onOpen = { record -> browse = RecordBrowse.Detail(record.id, fromAll = browse is RecordBrowse.All) },
+                        onCopy = { text ->
+                            scope.launch {
+                                clipboard.setClipEntry(ClipData.newPlainText(clipLabel, text).toClipEntry())
+                            }
+                        },
+                        onSpeak = { record -> viewModel.speak("record:${record.id}", record.targetText) },
+                        onUseLocal = { text ->
+                            viewModel.speak("local-once", text, forceLocal = true)
+                            viewModel.dismissMessage()
+                        },
+                        onDelete = viewModel::deleteRecord,
+                        onReuse = { record ->
+                            viewModel.reuseTextRecord(record)
+                            browse = null
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else if (state.tab == TranslateTab.Live) {
+                    LiveStage(
+                        state = state,
+                        records = tabRecords,
+                        onPickSource = { picking = PickTarget.LiveSource },
+                        onPickTarget = { picking = PickTarget.LiveTarget },
+                        onPickVoice = { picking = PickTarget.Voice },
+                        onSwap = viewModel::swapLiveLanguages,
+                        onToggle = {
+                            if (liveActive) {
+                                viewModel.stopLive()
+                            } else {
+                                permission.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                        },
+                        onCopy = { text ->
+                            scope.launch {
+                                clipboard.setClipEntry(ClipData.newPlainText(clipLabel, text).toClipEntry())
+                            }
+                        },
+                        onSpeak = { text -> viewModel.speak("live-caption", text) },
+                        onOpenRecord = { record -> browse = RecordBrowse.Detail(record.id, fromAll = false) },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    TextStage(
+                        state = state,
+                        records = tabRecords,
+                        onPickSource = { picking = PickTarget.TextSource },
+                        onPickTarget = { picking = PickTarget.TextTarget },
+                        onSwap = viewModel::swapTextLanguages,
+                        onPickModel = { picking = PickTarget.Model },
+                        onInput = viewModel::updateInput,
+                        onClear = viewModel::clearInput,
+                        onTranslate = { viewModel.translate(save = true) },
+                        onCopy = {
+                            scope.launch {
+                                clipboard.setClipEntry(ClipData.newPlainText(clipLabel, state.output).toClipEntry())
+                            }
+                        },
+                        onSpeak = { viewModel.speak("text-output", state.output) },
+                        onUseLocal = { text ->
+                            viewModel.speak("local-once", text, forceLocal = true)
+                            viewModel.dismissMessage()
+                        },
+                        onOpenRecord = { record -> browse = RecordBrowse.Detail(record.id, fromAll = false) },
+                        onVoicePhase = viewModel::setVoicePhase,
+                        onVoiceResult = viewModel::applyVoiceInput,
+                        onVoiceError = viewModel::reportVoiceError,
+                        recognize = viewModel::recognize,
+                        onRequestMic = {
+                            pendingTextMic = true
+                            permission.launch(Manifest.permission.RECORD_AUDIO)
+                        },
+                        modifier = Modifier.fillMaxSize(),
                     )
                 }
             }
@@ -243,133 +321,708 @@ fun TranslateScreen(
 }
 
 @Composable
-private fun androidx.compose.foundation.layout.ColumnScope.LiveStage(
+private fun TranslateModeSwitcher(
+    selected: TranslateTab,
+    onSelect: (TranslateTab) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tabs = listOf(
+        Triple(TranslateTab.Live, R.string.tab_live, Icons.Filled.Mic),
+        Triple(TranslateTab.Text, R.string.tab_text, Icons.AutoMirrored.Filled.Notes),
+    )
+    val selectedIndex = if (selected == TranslateTab.Live) 0 else 1
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f))
+            .padding(4.dp)
+            .selectableGroup(),
+    ) {
+        val segmentWidth = maxWidth / tabs.size
+        val indicatorOffset by animateDpAsState(
+            targetValue = segmentWidth * selectedIndex,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = Spring.StiffnessMediumLow,
+            ),
+            label = "modeIndicator",
+        )
+        Box(
+            modifier = Modifier
+                .offset(x = indicatorOffset)
+                .width(segmentWidth)
+                .fillMaxHeight()
+                .shadow(2.dp, RoundedCornerShape(20.dp), clip = false)
+                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(20.dp)),
+        )
+        Row(modifier = Modifier.fillMaxSize()) {
+            tabs.forEach { (tab, labelRes, icon) ->
+                ModeSegment(
+                    label = stringResource(labelRes),
+                    icon = icon,
+                    selected = tab == selected,
+                    onClick = { onSelect(tab) },
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModeSegment(
+    label: String,
+    icon: ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val color = if (selected) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Row(
+        modifier = modifier
+            .selectable(
+                selected = selected,
+                onClick = onClick,
+                role = Role.Tab,
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = color,
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            color = color,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun LiveStage(
     state: TranslateUiState,
     records: List<TranslationEntity>,
     onPickSource: () -> Unit,
     onPickTarget: () -> Unit,
-    onVoice: (VoiceChoice) -> Unit,
+    onPickVoice: () -> Unit,
     onSwap: () -> Unit,
     onToggle: () -> Unit,
     onCopy: (String) -> Unit,
     onSpeak: (String) -> Unit,
     onOpenRecord: (TranslationEntity) -> Unit,
-    onOpenAll: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val active = state.livePhase == LivePhase.Connecting || state.livePhase == LivePhase.Listening
     val blocked = livePairError(state.liveSourceLang, state.liveTargetLang, state.liveVoice)
     val scroll = rememberScrollState()
+    val empty = state.sourceCaption.isBlank() && state.targetCaption.isBlank() &&
+        state.sourcePartial.isBlank() && state.targetPartial.isBlank()
     LaunchedEffect(state.livePhase, state.sourceCaption, state.sourcePartial, state.targetCaption, state.targetPartial) {
         if (state.livePhase == LivePhase.Listening) scroll.animateScrollTo(scroll.maxValue)
         if (state.livePhase == LivePhase.Ended) scroll.scrollTo(0)
     }
-    if (active) {
-        Text(
-            "${languageLabel(state.liveSourceLang, liveLanguages)} → ${languageLabel(state.liveTargetLang, liveLanguages)} · ${stringResource(state.liveVoice.labelRes)}",
-            style = MaterialTheme.typography.titleMedium,
-        )
-        Text(
-            when {
-                state.livePhase == LivePhase.Connecting -> stringResource(R.string.connecting)
-                state.hearing -> stringResource(R.string.hearing)
-                else -> stringResource(R.string.quiet)
-            },
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    } else {
-        LanguageRow(
-            source = languageLabel(state.liveSourceLang, liveLanguages),
-            target = languageLabel(state.liveTargetLang, liveLanguages),
-            onSource = onPickSource,
-            onTarget = onPickTarget,
-            onSwap = onSwap,
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(VoiceChoice.FEMALE, VoiceChoice.MALE, VoiceChoice.CLONE).forEach { voice ->
-                FilterChip(
-                    selected = state.liveVoice == voice,
-                    onClick = { onVoice(voice) },
-                    label = { Text(stringResource(voice.labelRes)) },
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (active) {
+            Text(
+                "${languageLabel(state.liveSourceLang, liveLanguages)} → ${languageLabel(state.liveTargetLang, liveLanguages)} · ${stringResource(state.liveVoice.labelRes)}",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            LiveStatusRow(phase = state.livePhase, hearing = state.hearing)
+        } else {
+            LanguageRow(
+                source = languageLabel(state.liveSourceLang, liveLanguages),
+                target = languageLabel(state.liveTargetLang, liveLanguages),
+                onSource = onPickSource,
+                onTarget = onPickTarget,
+                onSwap = onSwap,
+            )
+            SettingLink(
+                label = stringResource(R.string.voice_label, stringResource(state.liveVoice.labelRes)),
+                onClick = onPickVoice,
+            )
+            if (state.liveVoice == VoiceChoice.CLONE) {
+                Text(
+                    stringResource(R.string.clone_hint),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
                 )
             }
         }
-        if (state.liveVoice == VoiceChoice.CLONE) {
-            Text(
-                stringResource(R.string.clone_hint),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-    }
-    Column(
-        modifier = Modifier.weight(1f).verticalScroll(scroll),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        if (state.sourceCaption.isBlank() && state.targetCaption.isBlank() && state.sourcePartial.isBlank() && state.targetPartial.isBlank()) {
-            Text(
-                stringResource(R.string.live_hint),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        } else {
-            CaptionCard(stringResource(R.string.source_label), state.sourceCaption, state.sourcePartial, compact = true)
-            CaptionCard(stringResource(R.string.target_label), state.targetCaption, state.targetPartial, compact = false)
-            if (state.livePhase == LivePhase.Ended && state.liveSaved) {
-                Text(stringResource(R.string.saved), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-                Row(modifier = Modifier.align(Alignment.End)) {
-                    IconButton(onClick = { onCopy(state.targetCaption) }) {
-                        Icon(Icons.Filled.ContentCopy, contentDescription = stringResource(R.string.copy_translation))
-                    }
-                    if (state.targetCaption.isNotBlank()) {
-                        IconButton(onClick = { onSpeak(state.targetCaption) }) {
-                            Icon(
-                                if (state.speakingKey == "live-caption") Icons.Filled.Stop else Icons.AutoMirrored.Filled.VolumeUp,
-                                contentDescription = stringResource(R.string.read_translation),
-                            )
+        Column(
+            modifier = Modifier.weight(1f).verticalScroll(scroll),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (empty && !active) {
+                LiveEmptyHint()
+                LastRecordHint(records = records, onOpen = onOpenRecord)
+            } else if (empty && active) {
+                LiveEmptyHint(listening = true)
+            } else {
+                CaptionCard(stringResource(R.string.source_label), state.sourceCaption, state.sourcePartial, compact = true)
+                CaptionCard(stringResource(R.string.target_label), state.targetCaption, state.targetPartial, compact = false)
+                if (state.livePhase == LivePhase.Ended && state.liveSaved) {
+                    Text(
+                        stringResource(R.string.saved),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Row(modifier = Modifier.align(Alignment.End)) {
+                        IconButton(onClick = { onCopy(state.targetCaption) }) {
+                            Icon(Icons.Filled.ContentCopy, contentDescription = stringResource(R.string.copy_translation))
+                        }
+                        if (state.targetCaption.isNotBlank()) {
+                            IconButton(onClick = { onSpeak(state.targetCaption) }) {
+                                Icon(
+                                    if (state.speakingKey == "live-caption") Icons.Filled.Stop else Icons.AutoMirrored.Filled.VolumeUp,
+                                    contentDescription = stringResource(R.string.read_translation),
+                                )
+                            }
                         }
                     }
                 }
             }
         }
-    }
-    if (!active) {
-        HistoryPreview(records = records, onOpen = onOpenRecord, onOpenAll = onOpenAll)
-    }
-    blocked?.let {
-        Text(stringResource(it), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-    }
-    state.message?.let { message ->
-        Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-    }
-    Button(onClick = onToggle, enabled = blocked == null || active, modifier = Modifier.fillMaxWidth()) {
-        Text(
-            when (state.livePhase) {
+        blocked?.let {
+            Text(stringResource(it), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        }
+        state.message?.let { message ->
+            Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+        }
+        PrimaryActionButton(
+            label = when (state.livePhase) {
                 LivePhase.Connecting -> stringResource(R.string.connecting)
                 LivePhase.Listening -> stringResource(R.string.end_live)
                 else -> stringResource(R.string.start_live)
             },
+            onClick = onToggle,
+            enabled = blocked == null || active,
+            stopStyle = active,
         )
+    }
+}
+
+@Composable
+private fun TextStage(
+    state: TranslateUiState,
+    records: List<TranslationEntity>,
+    onPickSource: () -> Unit,
+    onPickTarget: () -> Unit,
+    onSwap: () -> Unit,
+    onPickModel: () -> Unit,
+    onInput: (String) -> Unit,
+    onClear: () -> Unit,
+    onTranslate: () -> Unit,
+    onCopy: () -> Unit,
+    onSpeak: () -> Unit,
+    onUseLocal: (String) -> Unit,
+    onOpenRecord: (TranslationEntity) -> Unit,
+    onVoicePhase: (VoicePhase) -> Unit,
+    onVoiceResult: (String) -> Unit,
+    onVoiceError: (String) -> Unit,
+    recognize: (ByteArray, (String) -> Unit, (String) -> Unit) -> Unit,
+    onRequestMic: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    val latestVoiceResult by rememberUpdatedState(onVoiceResult)
+    val latestVoicePhase by rememberUpdatedState(onVoicePhase)
+    val latestVoiceError by rememberUpdatedState(onVoiceError)
+    val latestRecognize by rememberUpdatedState(recognize)
+    val speech = remember(context) {
+        SpeechInput(
+            context = context,
+            onText = { latestVoiceResult(it) },
+            onPhase = { latestVoicePhase(it) },
+            onError = { latestVoiceError(it) },
+            recognize = { wav, ok, fail -> latestRecognize(wav, ok, fail) },
+        )
+    }
+    DisposableEffect(speech) {
+        onDispose {
+            speech.destroy()
+            latestVoicePhase(VoicePhase.Idle)
+        }
+    }
+    val listening = state.voicePhase == VoicePhase.Listening
+    val recognizing = state.voicePhase == VoicePhase.Recognizing
+    val busy = listening || recognizing || state.translating
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        LanguageRow(
+            source = languageLabel(state.textSource, textLanguages),
+            target = languageLabel(state.textTarget, textLanguages),
+            onSource = onPickSource,
+            onTarget = onPickTarget,
+            onSwap = onSwap,
+        )
+        SettingLink(
+            label = stringResource(R.string.model_label, translationModelLabel(state.model)),
+            onClick = onPickModel,
+        )
+        Column(
+            modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            TextSourceCard(
+                input = state.input,
+                voicePhase = state.voicePhase,
+                onInput = onInput,
+                onClear = onClear,
+                onTranslate = onTranslate,
+                enabled = state.voicePhase == VoicePhase.Idle,
+            )
+            TextTargetCard(
+                output = state.output,
+                translating = state.translating,
+                speaking = state.speakingKey == "text-output",
+                onCopy = onCopy,
+                onSpeak = onSpeak,
+            )
+            state.message?.let { message ->
+                Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                if (state.offerLocalFor != null) {
+                    TextButton(onClick = { onUseLocal(state.offerLocalFor) }) {
+                        Text(stringResource(R.string.use_local_once))
+                    }
+                }
+            }
+            LastRecordHint(records = records, onOpen = onOpenRecord)
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            HoldToTalkButton(
+                listening = listening,
+                recognizing = recognizing,
+                enabled = !state.translating,
+                onRequestMic = onRequestMic,
+                onStart = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    speech.start("")
+                },
+                onStop = { speech.stop() },
+                modifier = Modifier.weight(1f),
+            )
+            val showTranslate = state.input.isNotBlank() || state.translating
+            AnimatedVisibility(visible = showTranslate) {
+                Button(
+                    onClick = onTranslate,
+                    enabled = state.input.isNotBlank() && !busy,
+                    modifier = Modifier.height(52.dp),
+                    shape = RoundedCornerShape(28.dp),
+                ) {
+                    if (state.translating) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
+                    } else {
+                        Text(stringResource(R.string.translate), style = MaterialTheme.typography.titleMedium)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TextSourceCard(
+    input: String,
+    voicePhase: VoicePhase,
+    onInput: (String) -> Unit,
+    onClear: () -> Unit,
+    onTranslate: () -> Unit,
+    enabled: Boolean,
+) {
+    val listening = voicePhase == VoicePhase.Listening
+    val recognizing = voicePhase == VoicePhase.Recognizing
+    val border by animateColorAsState(
+        targetValue = when {
+            listening -> MaterialTheme.colorScheme.primary
+            recognizing -> MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+            else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
+        },
+        label = "sourceBorder",
+    )
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface,
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, border, RoundedCornerShape(20.dp)),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(R.string.source_label),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                if (recognizing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                    )
+                } else if (input.isNotBlank() && enabled) {
+                    IconButton(onClick = onClear, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = stringResource(R.string.clear_input),
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            BasicTextField(
+                value = input,
+                onValueChange = onInput,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 112.dp)
+                    .padding(top = 4.dp),
+                enabled = enabled,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 17.sp,
+                    lineHeight = 26.sp,
+                ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { onTranslate() }),
+                decorationBox = { inner ->
+                    Box {
+                        if (input.isEmpty()) {
+                            Text(
+                                when (voicePhase) {
+                                    VoicePhase.Listening -> stringResource(R.string.listening_ellipsis)
+                                    VoicePhase.Recognizing -> stringResource(R.string.recognizing)
+                                    VoicePhase.Idle -> stringResource(R.string.text_input_hint)
+                                },
+                                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, lineHeight = 26.sp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        inner()
+                    }
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun TextTargetCard(
+    output: String,
+    translating: Boolean,
+    speaking: Boolean,
+    onCopy: () -> Unit,
+    onSpeak: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(R.string.target_label),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                when {
+                    translating -> {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    }
+                    output.isNotBlank() -> {
+                        IconButton(onClick = onCopy, modifier = Modifier.size(32.dp)) {
+                            Icon(
+                                Icons.Filled.ContentCopy,
+                                contentDescription = stringResource(R.string.copy_translation),
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                        IconButton(onClick = onSpeak, modifier = Modifier.size(32.dp)) {
+                            Icon(
+                                if (speaking) Icons.Filled.Stop else Icons.AutoMirrored.Filled.VolumeUp,
+                                contentDescription = stringResource(R.string.read_translation),
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    }
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 96.dp)
+                    .padding(top = 4.dp),
+            ) {
+                when {
+                    output.isNotBlank() -> {
+                        Text(
+                            output,
+                            style = MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp, lineHeight = 28.sp),
+                        )
+                    }
+                    translating -> {
+                        Text(
+                            stringResource(R.string.translating),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                    else -> {
+                        Text(
+                            stringResource(R.string.output_placeholder),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HoldToTalkButton(
+    listening: Boolean,
+    recognizing: Boolean,
+    enabled: Boolean,
+    onRequestMic: () -> Unit,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val active = listening || recognizing
+    val label = when {
+        recognizing -> stringResource(R.string.recognizing)
+        listening -> stringResource(R.string.release_to_stop)
+        else -> stringResource(R.string.hold_to_talk)
+    }
+    Surface(
+        modifier = modifier
+            .height(52.dp)
+            .clip(RoundedCornerShape(28.dp))
+            .pointerInput(enabled, recognizing) {
+                detectTapGestures(
+                    onPress = {
+                        if (!enabled || recognizing) return@detectTapGestures
+                        val granted = ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.RECORD_AUDIO,
+                        ) == PackageManager.PERMISSION_GRANTED
+                        if (!granted) {
+                            onRequestMic()
+                            return@detectTapGestures
+                        }
+                        onStart()
+                        tryAwaitRelease()
+                        onStop()
+                    },
+                )
+            },
+        shape = RoundedCornerShape(28.dp),
+        color = when {
+            listening -> MaterialTheme.colorScheme.primary
+            recognizing -> MaterialTheme.colorScheme.primaryContainer
+            else -> MaterialTheme.colorScheme.secondaryContainer
+        },
+        contentColor = when {
+            listening -> MaterialTheme.colorScheme.onPrimary
+            else -> MaterialTheme.colorScheme.onSecondaryContainer
+        },
+        shadowElevation = if (listening) 4.dp else 0.dp,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            if (recognizing) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            } else {
+                Icon(Icons.Filled.Mic, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Text(
+                label,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LiveEmptyHint(listening: Boolean = false) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 180.dp)
+            .padding(vertical = 24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                stringResource(if (listening) R.string.hearing else R.string.live_hint_title),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            if (!listening) {
+                Text(
+                    stringResource(R.string.live_hint),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LiveStatusRow(phase: LivePhase, hearing: Boolean) {
+    val listening = phase == LivePhase.Listening && hearing
+    val pulse = if (listening) {
+        val transition = rememberInfiniteTransition(label = "hear")
+        transition.animateFloat(
+            initialValue = 0.45f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
+            label = "hearAlpha",
+        ).value
+    } else {
+        1f
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .alpha(pulse)
+                .background(
+                    color = when {
+                        phase == LivePhase.Connecting -> MaterialTheme.colorScheme.outline
+                        hearing -> MaterialTheme.colorScheme.primary
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    shape = CircleShape,
+                ),
+        )
+        Text(
+            when {
+                phase == LivePhase.Connecting -> stringResource(R.string.connecting)
+                hearing -> stringResource(R.string.hearing)
+                else -> stringResource(R.string.quiet)
+            },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+@Composable
+private fun LastRecordHint(records: List<TranslationEntity>, onOpen: (TranslationEntity) -> Unit) {
+    val latest = records.firstOrNull() ?: return
+    val preview = latest.targetText.lineSequence().firstOrNull { it.isNotBlank() }?.trim()
+        .orEmpty()
+        .ifBlank { stringResource(R.string.no_target) }
+    Text(
+        stringResource(R.string.last_record, preview),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onOpen(latest) }
+            .padding(vertical = 4.dp),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+private fun SettingLink(label: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Icon(
+            Icons.Filled.ExpandMore,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun PrimaryActionButton(
+    label: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    stopStyle: Boolean = false,
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth().height(52.dp),
+        shape = RoundedCornerShape(28.dp),
+        colors = if (stopStyle) {
+            ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.secondary,
+                contentColor = MaterialTheme.colorScheme.onSecondary,
+            )
+        } else {
+            ButtonDefaults.buttonColors()
+        },
+    ) {
+        Text(label, style = MaterialTheme.typography.titleMedium)
     }
 }
 
 private sealed interface RecordBrowse {
     data object All : RecordBrowse
     data class Detail(val id: Long, val fromAll: Boolean) : RecordBrowse
-}
-
-@Composable
-private fun HistoryPreview(
-    records: List<TranslationEntity>,
-    onOpen: (TranslationEntity) -> Unit,
-    onOpenAll: () -> Unit,
-) {
-    if (records.isEmpty()) return
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-        Text(stringResource(R.string.history), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-        TextButton(onClick = onOpenAll) { Text(stringResource(R.string.see_all)) }
-    }
-    records.take(3).forEach { record ->
-        RecordSummary(record, onOpen)
-    }
 }
 
 @Composable
@@ -523,9 +1176,13 @@ private fun RecordDetail(
                 if (record.kind == "TEXT") {
                     TextButton(onClick = onReuse) { Text(stringResource(R.string.fill_input)) }
                 }
-                TextButton(onClick = onCopy, enabled = record.targetText.isNotBlank()) { Text(stringResource(R.string.copy_translation)) }
+                TextButton(onClick = onCopy, enabled = record.targetText.isNotBlank()) {
+                    Text(stringResource(R.string.copy_translation))
+                }
                 if (record.targetText.isNotBlank()) {
-                    TextButton(onClick = onSpeak) { Text(stringResource(if (speaking) R.string.stop_reading else R.string.read_translation)) }
+                    TextButton(onClick = onSpeak) {
+                        Text(stringResource(if (speaking) R.string.stop_reading else R.string.read_translation))
+                    }
                 }
                 TextButton(onClick = { confirming = true }) { Text(stringResource(R.string.delete)) }
             }
@@ -547,12 +1204,14 @@ private fun RecordSummary(record: TranslationEntity, onOpen: (TranslationEntity)
         ) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    record.targetText.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty().ifBlank { stringResource(R.string.no_target) },
+                    record.targetText.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+                        .ifBlank { stringResource(R.string.no_target) },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    "$pair · ${record.sourceText.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty().ifBlank { stringResource(R.string.no_source) }}",
+                    "$pair · ${record.sourceText.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+                        .ifBlank { stringResource(R.string.no_source) }}",
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
@@ -608,66 +1267,6 @@ private fun sameDay(left: Calendar, right: Calendar): Boolean =
 private const val SEARCH_AFTER = 6
 
 @Composable
-private fun TextPane(
-    state: TranslateUiState,
-    onPickSource: () -> Unit,
-    onPickTarget: () -> Unit,
-    onSwap: () -> Unit,
-    onPickModel: () -> Unit,
-    onInput: (String) -> Unit,
-    onTranslate: () -> Unit,
-    onCopy: () -> Unit,
-    onSpeak: () -> Unit,
-) {
-    LanguageRow(
-        source = languageLabel(state.textSource, textLanguages),
-        target = languageLabel(state.textTarget, textLanguages),
-        onSource = onPickSource,
-        onTarget = onPickTarget,
-        onSwap = onSwap,
-    )
-    Surface(
-        modifier = Modifier.clickable(onClick = onPickModel),
-        shape = RoundedCornerShape(50),
-        color = MaterialTheme.colorScheme.primaryContainer,
-    ) {
-        Text(
-            stringResource(R.string.doubao_model_chip, translationModelLabel(state.model)),
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-        )
-    }
-    OutlinedTextField(
-        value = state.input,
-        onValueChange = onInput,
-        modifier = Modifier.fillMaxWidth(),
-        label = { Text(stringResource(R.string.source_label)) },
-        minLines = 4,
-    )
-    Button(onClick = onTranslate, enabled = !state.translating, modifier = Modifier.fillMaxWidth()) {
-        Text(stringResource(if (state.translating) R.string.translating else R.string.translate))
-    }
-    if (state.output.isNotBlank()) {
-        Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(state.output, style = MaterialTheme.typography.bodyLarge)
-                Row(modifier = Modifier.align(Alignment.End)) {
-                    IconButton(onClick = onCopy) {
-                        Icon(Icons.Filled.ContentCopy, contentDescription = stringResource(R.string.copy_translation))
-                    }
-                    IconButton(onClick = onSpeak) {
-                        Icon(
-                            if (state.speakingKey == "text-output") Icons.Filled.Stop else Icons.AutoMirrored.Filled.VolumeUp,
-                            contentDescription = stringResource(R.string.read_translation),
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun LanguageRow(
     source: String,
     target: String,
@@ -678,8 +1277,14 @@ private fun LanguageRow(
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         LanguageChip(source, onSource, Modifier.weight(1f))
         if (onSwap != null) {
-            IconButton(onClick = onSwap) {
-                Icon(Icons.Filled.SwapHoriz, contentDescription = stringResource(R.string.swap_languages))
+            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+                IconButton(onClick = onSwap, modifier = Modifier.size(40.dp)) {
+                    Icon(
+                        Icons.Filled.SwapHoriz,
+                        contentDescription = stringResource(R.string.swap_languages),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
             }
         }
         LanguageChip(target, onTarget, Modifier.weight(1f))
@@ -691,9 +1296,15 @@ private fun LanguageChip(label: String, onClick: () -> Unit, modifier: Modifier)
     Surface(
         modifier = modifier.clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
     ) {
-        Text(label, modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp))
+        Text(
+            label,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            style = MaterialTheme.typography.titleMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -703,7 +1314,15 @@ private fun CaptionCard(title: String, committed: String, partial: String, compa
         Column(modifier = Modifier.padding(16.dp)) {
             Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (committed.isNotBlank()) {
-                Text(committed, modifier = Modifier.padding(top = 8.dp), style = if (compact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge)
+                Text(
+                    committed,
+                    modifier = Modifier.padding(top = 8.dp),
+                    style = if (compact) {
+                        MaterialTheme.typography.bodyMedium
+                    } else {
+                        MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp, lineHeight = 26.sp)
+                    },
+                )
             }
             if (partial.isNotBlank()) {
                 Text(
@@ -717,7 +1336,10 @@ private fun CaptionCard(title: String, committed: String, partial: String, compa
     }
 }
 
-private enum class PickTarget { TextSource, TextTarget, LiveSource, LiveTarget, Model }
+private enum class PickTarget { TextSource, TextTarget, LiveSource, LiveTarget, Model, Voice }
+
+private val preferredTextCodes = listOf("zh", "en", "ja", "ko")
+private val preferredLiveCodes = listOf("zh", "en", "ja", "ko")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -729,57 +1351,138 @@ private fun OptionSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var custom by remember { mutableStateOf("") }
+    var showCustom by remember { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            if (target == PickTarget.Model) {
-                Text(stringResource(R.string.translation_model), style = MaterialTheme.typography.titleMedium)
-                translationModels.forEach { option ->
-                    Text(
-                        stringResource(option.labelRes),
-                        modifier = Modifier.fillMaxWidth().clickable {
-                            viewModel.selectModel(option.id)
-                            onDismiss()
-                        }.padding(vertical = 12.dp),
-                    )
-                    Text(option.id, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                OutlinedTextField(value = custom, onValueChange = { custom = it }, modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.other_model)) })
-                Button(
-                    onClick = {
-                        viewModel.selectModel(custom)
-                        onDismiss()
-                    },
-                    enabled = custom.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text(stringResource(R.string.use_this_id)) }
-            } else {
-                val source = target == PickTarget.TextSource || target == PickTarget.LiveSource
-                val languages = when (target) {
-                    PickTarget.TextSource -> listOf(SpeechLanguage("", R.string.lang_auto)) + textLanguages
-                    PickTarget.TextTarget -> textLanguages
-                    else -> liveLanguages.filter { language ->
-                        source || (language.code != "yue-CN" && language.code != "sh-CN")
+            when (target) {
+                PickTarget.Model -> {
+                    Text(stringResource(R.string.translation_model), style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(4.dp))
+                    translationModels.forEach { option ->
+                        OptionRow(
+                            label = stringResource(option.labelRes),
+                            detail = option.id,
+                            selected = state.model == option.id,
+                            onClick = {
+                                viewModel.selectModel(option.id)
+                                onDismiss()
+                            },
+                        )
+                    }
+                    TextButton(onClick = { showCustom = !showCustom }) {
+                        Text(stringResource(R.string.other_model))
+                    }
+                    if (showCustom) {
+                        Text(
+                            stringResource(R.string.other_model_detail),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        OutlinedTextField(
+                            value = custom,
+                            onValueChange = { custom = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text(stringResource(R.string.other_model)) },
+                        )
+                        Button(
+                            onClick = {
+                                viewModel.selectModel(custom)
+                                onDismiss()
+                            },
+                            enabled = custom.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(stringResource(R.string.use_this_id)) }
                     }
                 }
-                languages.forEach { language ->
-                    Text(
-                        stringResource(language.labelRes),
-                        modifier = Modifier.fillMaxWidth().clickable {
-                            when (target) {
-                                PickTarget.TextSource, PickTarget.TextTarget ->
-                                    viewModel.selectTextLanguage(source, language.code)
-                                else -> viewModel.selectLiveLanguage(source, language.code)
-                            }
-                            onDismiss()
-                        }.padding(vertical = 12.dp),
-                    )
+                PickTarget.Voice -> {
+                    Text(stringResource(R.string.choose_voice), style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(4.dp))
+                    VoiceChoice.entries.forEach { voice ->
+                        OptionRow(
+                            label = stringResource(voice.labelRes),
+                            detail = null,
+                            selected = state.liveVoice == voice,
+                            onClick = {
+                                viewModel.selectLiveVoice(voice)
+                                onDismiss()
+                            },
+                        )
+                    }
+                }
+                else -> {
+                    val source = target == PickTarget.TextSource || target == PickTarget.LiveSource
+                    val languages = when (target) {
+                        PickTarget.TextSource -> listOf(SpeechLanguage("", R.string.lang_auto)) + preferLanguages(textLanguages, preferredTextCodes)
+                        PickTarget.TextTarget -> preferLanguages(textLanguages, preferredTextCodes)
+                        else -> preferLanguages(
+                            liveLanguages.filter { language ->
+                                source || (language.code != "yue-CN" && language.code != "sh-CN")
+                            },
+                            preferredLiveCodes,
+                        )
+                    }
+                    val selected = when (target) {
+                        PickTarget.TextSource -> state.textSource
+                        PickTarget.TextTarget -> state.textTarget
+                        PickTarget.LiveSource -> state.liveSourceLang
+                        else -> state.liveTargetLang
+                    }
+                    languages.forEach { language ->
+                        OptionRow(
+                            label = stringResource(language.labelRes),
+                            detail = null,
+                            selected = language.code == selected,
+                            onClick = {
+                                when (target) {
+                                    PickTarget.TextSource, PickTarget.TextTarget ->
+                                        viewModel.selectTextLanguage(source, language.code)
+                                    else -> viewModel.selectLiveLanguage(source, language.code)
+                                }
+                                onDismiss()
+                            },
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun OptionRow(label: String, detail: String?, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                label,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            )
+            detail?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (selected) {
+            Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+private fun preferLanguages(languages: List<SpeechLanguage>, preferred: List<String>): List<SpeechLanguage> {
+    val head = preferred.mapNotNull { code -> languages.firstOrNull { it.code == code } }
+    val rest = languages.filter { it.code !in preferred }
+    return head + rest
 }
 
 private tailrec fun Context.findActivity(): Activity = when (this) {

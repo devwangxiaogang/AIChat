@@ -52,6 +52,8 @@ class SpeechInput(
     fun stop() {
         if (!capturing) return
         capturing = false
+        // 松手后立刻进入识别态，避免等采集线程结束才有反馈。
+        main.post { onPhase(VoicePhase.Recognizing) }
         capture?.join(1_000)
         capture = null
         recorder?.runCatching {
@@ -61,11 +63,12 @@ class SpeechInput(
         recorder = null
         val wav = pcmToWav(pcm.toByteArray())
         if (wav.size <= WAV_HEADER + MIN_PCM) {
-            onPhase(VoicePhase.Idle)
-            onError(context.getString(R.string.asr_empty))
+            main.post {
+                onPhase(VoicePhase.Idle)
+                onError(context.getString(R.string.asr_empty))
+            }
             return
         }
-        onPhase(VoicePhase.Recognizing)
         recognize(
             wav,
             { spoken ->

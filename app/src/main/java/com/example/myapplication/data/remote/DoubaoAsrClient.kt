@@ -41,7 +41,11 @@ class DoubaoAsrClient @Inject constructor(
     private val http: OkHttpClient,
     private val json: Json,
 ) {
-    suspend fun transcribe(apiKey: String, wav: ByteArray): String = withContext(Dispatchers.IO) {
+    /**
+     * @param language BCP-47 语种，如 zh-CN / en-US；空字符串表示交给服务端自动检测。
+     */
+    suspend fun transcribe(apiKey: String, wav: ByteArray, language: String = "zh-CN"): String = withContext(Dispatchers.IO) {
+        val asrLanguage = language.trim()
         val messages = Channel<ByteArray>(Channel.UNLIMITED)
         val failure = CompletableDeferred<Throwable>()
         val request = Request.Builder()
@@ -81,7 +85,7 @@ class DoubaoAsrClient @Inject constructor(
             },
         )
         try {
-            if (!socket.send(clientFrame(FULL_CLIENT, 0, JSON_SERIAL, gzip(requestPayload())).toByteString())) {
+            if (!socket.send(clientFrame(FULL_CLIENT, 0, JSON_SERIAL, gzip(requestPayload(asrLanguage))).toByteString())) {
                 error(context.getString(R.string.asr_connect_failed))
             }
             var offset = 0
@@ -114,7 +118,7 @@ class DoubaoAsrClient @Inject constructor(
         }
     }
 
-    private fun requestPayload(): ByteArray = buildJsonObject {
+    private fun requestPayload(language: String): ByteArray = buildJsonObject {
         putJsonObject("user") { put("uid", "aidemo") }
         putJsonObject("audio") {
             put("format", "wav")
@@ -122,12 +126,13 @@ class DoubaoAsrClient @Inject constructor(
             put("rate", 16_000)
             put("bits", 16)
             put("channel", 1)
-            put("language", "zh-CN")
+            if (language.isNotBlank()) put("language", language)
         }
         putJsonObject("request") {
             put("model_name", "bigmodel")
             put("enable_itn", true)
             put("enable_punc", true)
+            put("show_utterances", false)
         }
     }.toString().encodeToByteArray()
 

@@ -22,6 +22,7 @@ import com.example.myapplication.data.SpeechReader
 import com.example.myapplication.data.local.TranslationDao
 import com.example.myapplication.data.local.TranslationEntity
 import com.example.myapplication.data.remote.AstEvent
+import com.example.myapplication.data.remote.DoubaoAsrClient
 import com.example.myapplication.data.remote.DoubaoAstClient
 import com.example.myapplication.data.remote.DoubaoTranslateClient
 import com.example.myapplication.domain.SettingsRepository
@@ -30,6 +31,7 @@ import com.example.myapplication.domain.model.ProviderId
 import com.example.myapplication.domain.model.SpeechPreferences
 import com.example.myapplication.domain.model.VoiceChoice
 import com.example.myapplication.domain.model.livePairError
+import com.example.myapplication.ui.chat.VoicePhase
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -37,6 +39,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -67,6 +70,7 @@ data class TranslateUiState(
     val speakingKey: String? = null,
     val message: String? = null,
     val offerLocalFor: String? = null,
+    val voicePhase: VoicePhase = VoicePhase.Idle,
 )
 
 @HiltViewModel
@@ -76,6 +80,7 @@ class TranslateViewModel @Inject constructor(
     private val translations: TranslationDao,
     private val translator: DoubaoTranslateClient,
     private val interpreter: DoubaoAstClient,
+    private val speechRecognizer: DoubaoAsrClient,
     private val speechReader: SpeechReader,
 ) : ViewModel() {
     var state by mutableStateOf(TranslateUiState())
@@ -83,6 +88,8 @@ class TranslateViewModel @Inject constructor(
 
     private var liveJob: Job? = null
     private var liveAudio: Channel<ByteArray>? = null
+    private var autoTranslateJob: Job? = null
+    private var lastTranslatedInput: String? = null
     private val player = LivePlayer()
     private val audioManager = context.getSystemService(AudioManager::class.java)
     private var previousAudioMode = AudioManager.MODE_NORMAL
@@ -110,7 +117,10 @@ class TranslateViewModel @Inject constructor(
     }
 
     fun selectTab(tab: TranslateTab) {
-        if (tab != TranslateTab.Live) stopLive()
+        if (state.livePhase.active) {
+            state = state.copy(message = context.getString(R.string.end_live_first))
+            return
+        }
         state = state.copy(tab = tab, message = null)
     }
 
@@ -121,11 +131,94 @@ class TranslateViewModel @Inject constructor(
 
     fun updateInput(value: String) {
         state = state.copy(input = value)
+        scheduleAutoTranslate(value)
+    }
+
+    fun clearInput() {
+        autoTranslateJob?.cancel()
+        lastTranslatedInput = null
+        state = state.copy(input = "", output = "", message = null, offerLocalFor = null)
+    }
+
+    fun setVoicePhase(phase: VoicePhase) {
+        state = state.copy(voicePhase = phase)
+    }
+
+    fun denyTextMicrophone() {
+        state = state.copy(message = context.getString(R.string.need_mic_text), voicePhase = VoicePhase.Idle)
+    }
+
+    fun reportVoiceError(message: String) {
+        state = state.copy(message = message, voicePhase = VoicePhase.Idle)
+    }
+
+    /** 录音识别结果：填入原文、按文字脚本匹配语种，并立即翻译。 */
+    fun applyVoiceInput(spoken: String) {
+        val text = spoken.trim()
+        if (text.isEmpty()) return
+        autoTranslateJob?.cancel()
+        lastTranslatedInput = null
+        state = state.copy(
+            input = text,
+            message = null,
+            offerLocalFor = null,
+            voicePhase = VoicePhase.Idle,
+        )
+        matchLanguagesFromText(text)
+        translate(save = true)
+    }
+
+    /** 按输入文本脚本自动匹配源/目标语；目标语与源语冲突时回落到中↔英。 */
+    private fun matchLanguagesFromText(text: String) {
+        val sample = text.trim()
+        if (sample.isEmpty() || !hasLanguageSignal(sample)) return
+        val detected = detectScriptLanguage(sample)
+        val target = when {
+            state.textTarget.isBlank() || state.textTarget == detected ->
+                if (detected.startsWith("zh")) "en" else "zh"
+            else -> state.textTarget
+        }
+        if (detected == state.textSource && target == state.textTarget) return
+        state = state.copy(textSource = detected, textTarget = target, message = null)
+        updateSpeech { it.copy(textSource = detected, textTarget = target) }
+    }
+
+    fun recognize(wav: ByteArray, onSuccess: (String) -> Unit, onFailure: (String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val apiKey = settingsRepository.get(ProviderId.DOUBAO).speechApiKey.trim()
+                if (apiKey.isEmpty()) {
+                    onFailure(context.getString(R.string.asr_key_missing))
+                } else {
+                    // 优先自动语种；服务端若要求明确语种，再回退中文识别。
+                    val spoken = runCatching {
+                        speechRecognizer.transcribe(apiKey, wav, language = "")
+                    }.getOrElse {
+                        speechRecognizer.transcribe(apiKey, wav, language = "zh-CN")
+                    }
+                    onSuccess(spoken)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                onFailure(error.message?.takeIf { it.isNotBlank() } ?: context.getString(R.string.asr_failed))
+            }
+        }
     }
 
     fun swapTextLanguages() {
         if (state.textSource.isEmpty()) return
-        updateSpeech { it.copy(textSource = state.textTarget, textTarget = state.textSource) }
+        val source = state.textSource
+        val target = state.textTarget
+        val hasOutput = state.output.isNotBlank()
+        autoTranslateJob?.cancel()
+        lastTranslatedInput = null
+        state = state.copy(
+            input = if (hasOutput) state.output else state.input,
+            output = if (hasOutput) state.input else state.output,
+            message = null,
+        )
+        updateSpeech { it.copy(textSource = target, textTarget = source) }
     }
 
     fun selectTextLanguage(source: Boolean, code: String) {
@@ -157,14 +250,19 @@ class TranslateViewModel @Inject constructor(
         }
     }
 
-    fun translate() {
+    fun translate(save: Boolean = true) {
         val text = state.input.trim()
         if (text.isEmpty() || state.translating) return
+        matchLanguagesFromText(text)
         if (state.textTarget.isBlank() || state.textSource == state.textTarget) {
             state = state.copy(message = context.getString(R.string.choose_different_target))
             return
         }
-        state = state.copy(translating = true, message = null, output = "")
+        if (save && text == lastTranslatedInput && state.output.isNotBlank()) {
+            viewModelScope.launch { saveTextRecord(text, state.output) }
+            return
+        }
+        state = state.copy(translating = true, message = null, output = if (save) "" else state.output)
         viewModelScope.launch {
             try {
                 val doubao = settingsRepository.get(ProviderId.DOUBAO)
@@ -177,17 +275,8 @@ class TranslateViewModel @Inject constructor(
                     sourceLanguage = state.textSource,
                     targetLanguage = state.textTarget,
                 )
-                translations.insert(
-                    TranslationEntity(
-                        kind = "TEXT",
-                        sourceLang = state.textSource,
-                        targetLang = state.textTarget,
-                        sourceText = text,
-                        targetText = translated,
-                        option = state.model,
-                        createdAt = System.currentTimeMillis(),
-                    ),
-                )
+                lastTranslatedInput = text
+                if (save) saveTextRecord(text, translated)
                 state = state.copy(output = translated, translating = false)
             } catch (cancelled: CancellationException) {
                 state = state.copy(translating = false)
@@ -199,6 +288,37 @@ class TranslateViewModel @Inject constructor(
                 )
             }
         }
+    }
+
+    private fun scheduleAutoTranslate(value: String) {
+        autoTranslateJob?.cancel()
+        val trimmed = value.trim()
+        if (trimmed.isEmpty()) {
+            lastTranslatedInput = null
+            state = state.copy(output = "")
+            return
+        }
+        if (trimmed == lastTranslatedInput && state.output.isNotBlank()) return
+        autoTranslateJob = viewModelScope.launch {
+            delay(AUTO_TRANSLATE_DELAY_MS)
+            if (state.input.trim() != trimmed || state.translating) return@launch
+            matchLanguagesFromText(trimmed)
+            translate(save = false)
+        }
+    }
+
+    private suspend fun saveTextRecord(text: String, translated: String) {
+        translations.insert(
+            TranslationEntity(
+                kind = "TEXT",
+                sourceLang = state.textSource,
+                targetLang = state.textTarget,
+                sourceText = text,
+                targetText = translated,
+                option = state.model,
+                createdAt = System.currentTimeMillis(),
+            ),
+        )
     }
 
     fun toggleLive() {
@@ -296,6 +416,8 @@ class TranslateViewModel @Inject constructor(
 
     fun reuseTextRecord(record: TranslationEntity) {
         if (record.kind != "TEXT") return
+        autoTranslateJob?.cancel()
+        lastTranslatedInput = record.sourceText.trim()
         state = state.copy(
             tab = TranslateTab.Text,
             input = record.sourceText,
@@ -476,11 +598,41 @@ class TranslateViewModel @Inject constructor(
     private companion object {
         const val SAMPLE_RATE = 16_000
         const val CHUNK_BYTES = 2560
+        const val AUTO_TRANSLATE_DELAY_MS = 600L
     }
 }
 
 private val LivePhase.active: Boolean
     get() = this == LivePhase.Connecting || this == LivePhase.Listening
+
+/** 按文字脚本粗判语种，用于录音/键盘输入后自动匹配翻译方向。 */
+internal fun detectScriptLanguage(text: String): String {
+    val sample = text.take(240)
+    if (sample.isBlank()) return "zh"
+    val hangul = sample.count { it in '\uac00'..'\ud7af' }
+    val kana = sample.count { it in '\u3040'..'\u30ff' }
+    val cjk = sample.count { it in '\u4e00'..'\u9fff' }
+    val cyrillic = sample.count { it in '\u0400'..'\u04ff' }
+    val arabic = sample.count { it in '\u0600'..'\u06ff' }
+    val thai = sample.count { it in '\u0e00'..'\u0e7f' }
+    val letters = sample.count { it.isLetter() }.coerceAtLeast(1)
+    return when {
+        hangul * 5 >= letters -> "ko"
+        kana >= 2 -> "ja"
+        arabic * 5 >= letters -> "ar"
+        thai * 5 >= letters -> "th"
+        cyrillic * 5 >= letters -> "ru"
+        cjk >= 2 || cjk * 5 >= letters -> "zh"
+        else -> "en"
+    }
+}
+
+/** 过短或几乎没有字母/文字时不改语种，避免输入中途乱跳。 */
+private fun hasLanguageSignal(text: String): Boolean {
+    val letters = text.count { it.isLetter() }
+    val cjk = text.count { it in '\u4e00'..'\u9fff' || it in '\u3040'..'\u30ff' || it in '\uac00'..'\ud7af' }
+    return letters + cjk >= 2
+}
 
 private fun commitLine(existing: String, incoming: String): String {
     val line = incoming.trim()

@@ -1,33 +1,45 @@
 package com.example.myapplication.ui.chat
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.CircularProgressIndicator
@@ -53,21 +65,22 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import android.Manifest
-import android.content.pm.PackageManager
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
+import com.example.myapplication.R
 import com.example.myapplication.domain.model.ChatMessage
 import com.example.myapplication.domain.model.MessageStatus
 import com.example.myapplication.domain.model.Role
-import androidx.compose.ui.res.stringResource
-import com.example.myapplication.R
 import com.example.myapplication.ui.isDefaultConversationTitle
 import com.example.myapplication.ui.localizedSummary
 import com.example.myapplication.ui.model.ModelPickerDialog
@@ -86,13 +99,24 @@ fun ChatScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var showModels by remember { mutableStateOf(false) }
+    var voiceMode by remember { mutableStateOf(false) }
     var voicePhase by remember { mutableStateOf(VoicePhase.Idle) }
     val speech = remember {
         SpeechInput(
             context = context,
-            onText = viewModel::updateInput,
-            onPhase = { voicePhase = it },
-            onError = { message -> scope.launch { snackbar.showSnackbar(message) } },
+            onText = { spoken ->
+                viewModel.updateInput(spoken)
+                voiceMode = false
+                voicePhase = VoicePhase.Idle
+            },
+            onPhase = { phase ->
+                voicePhase = phase
+                if (phase == VoicePhase.Recognizing) voiceMode = false
+            },
+            onError = { message ->
+                voicePhase = VoicePhase.Idle
+                scope.launch { snackbar.showSnackbar(message) }
+            },
             recognize = viewModel::recognize,
         )
     }
@@ -100,7 +124,7 @@ fun ChatScreen(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) {
-            speech.start(viewModel.state.value.input)
+            voiceMode = true
         } else {
             scope.launch { snackbar.showSnackbar(context.getString(R.string.mic_for_chat)) }
         }
@@ -174,109 +198,31 @@ fun ChatScreen(
             )
         },
         bottomBar = {
-            val listening = voicePhase == VoicePhase.Listening
-            val recognizing = voicePhase == VoicePhase.Recognizing
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    // 键盘和导航栏只垫高输入栏一次，避免底部被挡住或出现双倍空白。
-                    .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-                    .border(
-                        width = 1.dp,
-                        color = if (listening) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.outline
-                        },
-                        shape = RoundedCornerShape(28.dp),
-                    ),
-                shape = RoundedCornerShape(28.dp),
-                color = MaterialTheme.colorScheme.surface,
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.Bottom,
-                ) {
-                    IconButton(
-                        onClick = {
-                            if (voicePhase != VoicePhase.Idle) {
-                                speech.stop()
-                            } else if (
-                                ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
-                                PackageManager.PERMISSION_GRANTED
-                            ) {
-                                speech.start(state.input)
-                            } else {
-                                recordPermission.launch(Manifest.permission.RECORD_AUDIO)
-                            }
-                        },
+            ChatComposer(
+                input = state.input,
+                generating = state.generating,
+                voiceMode = voiceMode,
+                voicePhase = voicePhase,
+                onInput = viewModel::updateInput,
+                onSend = viewModel::send,
+                onStopGeneration = viewModel::stop,
+                onToggleVoiceMode = {
+                    if (voiceMode) {
+                        if (voicePhase != VoicePhase.Idle) speech.destroy()
+                        voicePhase = VoicePhase.Idle
+                        voiceMode = false
+                    } else if (
+                        ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                        PackageManager.PERMISSION_GRANTED
                     ) {
-                        Icon(
-                            if (voicePhase != VoicePhase.Idle) Icons.Filled.Stop else Icons.Filled.Mic,
-                            contentDescription = stringResource(
-                                if (voicePhase != VoicePhase.Idle) R.string.stop_voice else R.string.voice_input,
-                            ),
-                            tint = if (listening) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                        )
+                        voiceMode = true
+                    } else {
+                        recordPermission.launch(Manifest.permission.RECORD_AUDIO)
                     }
-                    BasicTextField(
-                        value = state.input,
-                        onValueChange = viewModel::updateInput,
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(bottom = 14.dp, top = 14.dp),
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(
-                            color = MaterialTheme.colorScheme.onSurface,
-                        ),
-                        maxLines = 5,
-                        decorationBox = { inner ->
-                            Box {
-                                if (state.input.isEmpty()) {
-                                    Text(
-                                        when (voicePhase) {
-                                            VoicePhase.Listening -> stringResource(R.string.listening_ellipsis)
-                                            VoicePhase.Recognizing -> stringResource(R.string.recognizing)
-                                            VoicePhase.Idle -> stringResource(R.string.input_hint)
-                                        },
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                inner()
-                            }
-                        },
-                    )
-                    when {
-                        recognizing -> {
-                            CircularProgressIndicator(
-                                modifier = Modifier
-                                    .padding(12.dp)
-                                    .size(24.dp),
-                                strokeWidth = 2.dp,
-                            )
-                        }
-                        state.generating -> {
-                            IconButton(onClick = viewModel::stop) {
-                                Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.stop_generation))
-                            }
-                        }
-                        else -> {
-                            FilledIconButton(
-                                onClick = viewModel::send,
-                                enabled = state.input.isNotBlank(),
-                                modifier = Modifier.padding(bottom = 4.dp, end = 4.dp),
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.send))
-                            }
-                        }
-                    }
-                }
-            }
+                },
+                onHoldStart = { speech.start(viewModel.state.value.input) },
+                onHoldEnd = { speech.stop() },
+            )
         },
     ) { padding ->
         LazyColumn(
@@ -315,6 +261,186 @@ fun ChatScreen(
             },
             onDismiss = { showModels = false },
         )
+    }
+}
+
+@Composable
+private fun ChatComposer(
+    input: String,
+    generating: Boolean,
+    voiceMode: Boolean,
+    voicePhase: VoicePhase,
+    onInput: (String) -> Unit,
+    onSend: () -> Unit,
+    onStopGeneration: () -> Unit,
+    onToggleVoiceMode: () -> Unit,
+    onHoldStart: () -> Unit,
+    onHoldEnd: () -> Unit,
+) {
+    val listening = voicePhase == VoicePhase.Listening
+    val recognizing = voicePhase == VoicePhase.Recognizing
+    val borderColor by animateColorAsState(
+        targetValue = when {
+            listening -> MaterialTheme.colorScheme.primary
+            recognizing -> MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+            else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)
+        },
+        label = "composerBorder",
+    )
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .border(width = 1.dp, color = borderColor, shape = RoundedCornerShape(28.dp)),
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surface,
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(horizontal = 4.dp, vertical = 4.dp)
+                .then(if (voiceMode) Modifier.height(52.dp) else Modifier.heightIn(min = 48.dp)),
+            verticalAlignment = if (voiceMode) Alignment.CenterVertically else Alignment.Bottom,
+        ) {
+            IconButton(
+                onClick = onToggleVoiceMode,
+                enabled = voicePhase == VoicePhase.Idle,
+            ) {
+                Icon(
+                    if (voiceMode) Icons.Filled.Keyboard else Icons.Filled.Mic,
+                    contentDescription = stringResource(
+                        if (voiceMode) R.string.switch_to_keyboard else R.string.switch_to_voice,
+                    ),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (voiceMode) {
+                ChatHoldPad(
+                    listening = listening,
+                    recognizing = recognizing,
+                    onHoldStart = onHoldStart,
+                    onHoldEnd = onHoldEnd,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                )
+            } else {
+                BasicTextField(
+                    value = input,
+                    onValueChange = onInput,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(vertical = 12.dp),
+                    enabled = !recognizing,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                        color = MaterialTheme.colorScheme.onSurface,
+                    ),
+                    maxLines = 4,
+                    decorationBox = { inner ->
+                        Box {
+                            if (input.isEmpty()) {
+                                Text(
+                                    stringResource(
+                                        when {
+                                            recognizing -> R.string.recognizing
+                                            listening -> R.string.listening_ellipsis
+                                            else -> R.string.input_hint
+                                        },
+                                    ),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            inner()
+                        }
+                    },
+                )
+            }
+            when {
+                recognizing -> {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .padding(12.dp)
+                            .size(22.dp),
+                        strokeWidth = 2.dp,
+                    )
+                }
+                generating -> {
+                    IconButton(onClick = onStopGeneration) {
+                        Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.stop_generation))
+                    }
+                }
+                else -> {
+                    FilledIconButton(
+                        onClick = onSend,
+                        enabled = input.isNotBlank() && voicePhase == VoicePhase.Idle,
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.send))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatHoldPad(
+    listening: Boolean,
+    recognizing: Boolean,
+    onHoldStart: () -> Unit,
+    onHoldEnd: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val haptics = LocalHapticFeedback.current
+    val container by animateColorAsState(
+        targetValue = when {
+            listening -> MaterialTheme.colorScheme.primary
+            recognizing -> MaterialTheme.colorScheme.primaryContainer
+            else -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f)
+        },
+        label = "holdPad",
+    )
+    val content = when {
+        listening -> MaterialTheme.colorScheme.onPrimary
+        else -> MaterialTheme.colorScheme.onSecondaryContainer
+    }
+    val label = when {
+        recognizing -> stringResource(R.string.recognizing)
+        listening -> stringResource(R.string.release_to_stop)
+        else -> stringResource(R.string.hold_to_talk)
+    }
+    Surface(
+        modifier = modifier
+            .clip(RoundedCornerShape(22.dp))
+            .pointerInput(recognizing) {
+                detectTapGestures(
+                    onPress = {
+                        if (recognizing) return@detectTapGestures
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onHoldStart()
+                        tryAwaitRelease()
+                        onHoldEnd()
+                    },
+                )
+            },
+        shape = RoundedCornerShape(22.dp),
+        color = container,
+        contentColor = content,
+        shadowElevation = if (listening) 3.dp else 0.dp,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            if (!recognizing) {
+                Icon(Icons.Filled.Mic, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Text(
+                label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = if (listening) FontWeight.SemiBold else FontWeight.Medium,
+            )
+        }
     }
 }
 
