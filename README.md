@@ -4,7 +4,7 @@ Android 上的助手应用。可以和 DeepSeek、火山方舟（豆包）上的
 
 ## 功能
 
-侧边栏有三项：AI 对话、AI 翻译、设置。
+侧边栏有三项：AI 对话、AI 翻译、设置。打开侧边栏时主界面会被推出，关闭时不能右滑打开，避免列表误触。
 
 ### AI 对话
 
@@ -13,16 +13,30 @@ Android 上的助手应用。可以和 DeepSeek、火山方舟（豆包）上的
 - 模型按服务商分组选择。新建对话默认使用最近一次成功发送的模型；没有记录时使用设置里的默认模型。
 - 同一段对话不能中途更换服务商。更换模型只影响下一条消息。
 - 目录之外的模型 ID 可以手动填写，界面会显示为「自定义」。
-- 按住说话后，使用豆包流式语音识别把录音转成文字。
+- 点麦克风切换到语音模式，**按住说话、松开结束**；识别结果填入输入框后再发送。点键盘图标回到文字输入。
 
 ### AI 翻译
 
-文字翻译和同声翻译分成两个页面，记录也各自显示。
+同声翻译和文字翻译用顶部切换分开，记录也各自保存。右上角进入翻译记录。
 
-- 文字翻译使用方舟上的 Seed Translation。选择语言和模型后输入原文，译文可以复制和朗读。点记录里的「填入输入框」会把原文和译文放回编辑区。
-- 同声翻译对着手机说，原文和译文边写边出。译文由同传服务朗读。音色可选女声、男声或复刻原声。播放译文时麦克风不再把这段声音送回去，避免同一句反复翻译。
-- 同声翻译要求源语言或目标语言是中文或英文。指定女声或男声时，目标语言只能是中文或英文。复刻原声支持中文、英文、德语、法语、西班牙语、印尼语、日语、葡萄牙语。粤语和上海话只能作为源语言，并译成中文或英文。
-- 每个页面露出最近 3 条记录。点「全部」按今天、昨天和日期查看。记录超过 6 条时可以搜索原文或译文。点开一条可以看全文、复制、朗读；删除前会再确认一次。
+#### 文字翻译
+
+- 使用方舟上的 Seed Translation。输入或录音后自动翻译；也可点「翻译」立刻译并写入记录。
+- **按住说话、松开结束**录音输入。键盘输入或录音识别后，会按文字脚本自动匹配源语言；若与目标语相同，则自动切到中↔英另一侧。
+- 译文可以复制和朗读。记录里的「填入输入框」会把原文和译文放回编辑区。
+
+#### 同声翻译
+
+- 对着手机说，原文和译文边写边出，并由同传服务朗读译文。
+- 音色可选女声、男声或复刻原声。播放译文时麦克风不再把这段声音送回去，避免同一句反复翻译。
+- 进行中不能切换页面或改语种；系统返回会先结束同传。
+- 要求源语言或目标语言是中文或英文。指定女声或男声时，目标语言只能是中文或英文。复刻原声支持中文、英文、德语、法语、西班牙语、印尼语、日语、葡萄牙语。粤语和上海话只能作为源语言，并译成中文或英文。
+
+#### 翻译记录
+
+- 入口在翻译页右上角；空闲时也可点「上次」预览打开最近一条。
+- 列表按今天、昨天和日期分组。记录超过 6 条时可以搜索原文或译文。
+- 点开一条可以看全文、复制、朗读；删除前会再确认一次。离开详情会停止朗读。
 
 ### 朗读
 
@@ -72,7 +86,7 @@ An Android assistant. It chats with DeepSeek and with models on Volcengine Ark (
 
 ## Features
 
-The sidebar has three sections: AI Chat, AI Translation, and Settings.
+The sidebar has three sections: AI Chat, AI Translation, and Settings. Opening the drawer pushes the main content aside; swipe-to-open is disabled while the drawer is closed so list scrolling is not interrupted.
 
 ### AI Chat
 
@@ -81,16 +95,30 @@ The sidebar has three sections: AI Chat, AI Translation, and Settings.
 - Models are grouped by provider. A new chat starts with the model that last sent successfully, or with the default model from Settings when there is no history.
 - The provider stays fixed for an existing conversation. A model change applies to the next message.
 - A model ID outside the catalog can be entered manually and is shown as “Custom”.
-- Press-to-talk uses Doubao streaming speech recognition.
+- Tap the microphone to enter voice mode, then **hold to talk and release to stop**. Recognized text fills the input field; send it when ready. Tap the keyboard icon to return to typing.
 
 ### AI Translation
 
-Text translation and simultaneous interpretation are separate pages, and each page shows only its own history.
+Simultaneous interpretation and text translation are separate tabs, and each keeps its own history. Open history from the top-right control.
 
-- Text translation uses Seed Translation on Ark. Choose the languages and model, enter the source text, then copy or read the result. “Fill the input” on a history item puts that source and translation back into the editor.
-- Simultaneous interpretation writes the source and the translation while you speak, and the interpretation service reads the translation aloud. The voice can be female, male, or a clone of the speaker. While the translation is playing, the microphone does not send that audio back, so the same sentence is not translated again.
+#### Text translation
+
+- Uses Seed Translation on Ark. Translation runs automatically after you pause typing, or immediately when you tap Translate (and then saves a record).
+- **Hold to talk, release to stop** for voice input. After typing or recognition, the source language is inferred from the script; if it matches the target, the pair flips to the other side of Chinese ↔ English.
+- Copy or read the result aloud. “Fill the input” on a history item restores that source and translation to the editor.
+
+#### Simultaneous interpretation
+
+- Speak to the phone; source and translation appear as you talk, and the interpretation service reads the translation aloud.
+- Voice can be female, male, or a clone of the speaker. While the translation is playing, the microphone does not send that audio back, so the same sentence is not translated again.
+- During a session you cannot switch tabs or change languages; system Back ends the session first.
 - One side of a live pair must be Chinese or English. With a named voice, the target must be Chinese or English. Clone voice supports Chinese, English, German, French, Spanish, Indonesian, Japanese, and Portuguese. Cantonese and Shanghainese can only be the source, and only into Chinese or English.
-- Each page shows the latest three records. “All” groups them by today, yesterday, and date. Search appears after more than six records. Opening a record shows the full text, with copy and read-aloud; delete asks for confirmation.
+
+#### Translation history
+
+- Opened from the top-right control; when idle, a “Last” one-line preview can open the newest record.
+- The list groups items by today, yesterday, and date. Search appears after more than six records.
+- Opening a record shows the full text, with copy and read-aloud; delete asks for confirmation. Leaving the detail screen stops read-aloud.
 
 ### Read-aloud
 
