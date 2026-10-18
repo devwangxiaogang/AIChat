@@ -17,6 +17,7 @@ import com.example.myapplication.domain.model.VoiceChoice
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,6 +28,7 @@ import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 data class SpeakFailure(val message: String, val canUseLocal: Boolean)
 
@@ -61,7 +63,8 @@ class SpeechReader @Inject constructor(
         stop()
         val content = text.trim()
         if (content.isEmpty()) return
-        job = scope.launch {
+        lateinit var launched: Job
+        launched = scope.launch(start = CoroutineStart.LAZY) {
             speakingState.value = key
             try {
                 val preferences = settingsRepository.speech()
@@ -85,17 +88,32 @@ class SpeechReader @Inject constructor(
                         canUseLocal = true,
                     ),
                 )
-        } finally {
-            releasePlayer()
-            if (speakingState.value == key) speakingState.value = null
+            } finally {
+                synchronized(this@SpeechReader) {
+                    if (job === launched) {
+                        job = null
+                        val current = player
+                        player = null
+                        current?.release()
+                    }
+                }
+                if (speakingState.value == key) speakingState.value = null
+            }
         }
-        }
+        job = launched
+        launched.start()
     }
 
     fun stop() {
-        job?.cancel()
-        job = null
-        releasePlayer()
+        val cancelled = synchronized(this) {
+            val currentJob = job
+            job = null
+            val current = player
+            player = null
+            current?.release()
+            currentJob
+        }
+        cancelled?.cancel()
         local.stop()
         speakingState.value = null
     }
@@ -103,7 +121,7 @@ class SpeechReader @Inject constructor(
     private suspend fun playDoubao(apiKey: String, speaker: VoiceChoice, text: String) {
         val voice = (if (speaker == VoiceChoice.CLONE) VoiceChoice.FEMALE else speaker).ttsSpeakerId
         val playback = PcmPlayer(SAMPLE_RATE)
-        player = playback
+        synchronized(this) { player = playback }
         playback.start()
         for (chunk in speechChunks(text, DOUBAO_CHUNK)) {
             ttsClient.synthesize(apiKey, voice, chunk) { pcm -> playback.write(pcm) }
@@ -126,14 +144,6 @@ class SpeechReader @Inject constructor(
             rest = rest.substring(end).trimStart()
         }
         return parts.filter { it.isNotBlank() }
-    }
-
-    private fun releasePlayer() {
-        synchronized(this) {
-            val current = player
-            player = null
-            current?.release()
-        }
     }
 
     private class PcmPlayer(sampleRate: Int) {
@@ -194,10 +204,13 @@ class SpeechReader @Inject constructor(
     }
 
     private class LocalSpeaker(context: Context) {
+        private val app = context.applicationContext
         private val main = Handler(Looper.getMainLooper())
         private var ready = false
+        private var failed = false
         private var pending: String? = null
         private var done: (() -> Unit)? = null
+        private var fail: (() -> Unit)? = null
         private val resumed = java.util.concurrent.atomic.AtomicBoolean(false)
         private val tts: TextToSpeech = TextToSpeech(context) { status ->
             if (status == TextToSpeech.SUCCESS) {
@@ -208,6 +221,13 @@ class SpeechReader @Inject constructor(
                 ready = true
                 pending?.let { speakNow(it) }
                 pending = null
+            } else {
+                failed = true
+                pending = null
+                val onFail = fail
+                fail = null
+                done = null
+                onFail?.invoke()
             }
         }
 
@@ -232,8 +252,21 @@ class SpeechReader @Inject constructor(
 
         suspend fun speak(text: String) {
             suspendCancellableCoroutine { continuation ->
+                if (failed) {
+                    continuation.resumeWithException(
+                        IllegalStateException(app.getString(R.string.local_tts_failed)),
+                    )
+                    return@suspendCancellableCoroutine
+                }
                 resumed.set(false)
                 done = { if (resumed.compareAndSet(false, true)) continuation.resume(Unit) }
+                fail = {
+                    if (resumed.compareAndSet(false, true)) {
+                        continuation.resumeWithException(
+                            IllegalStateException(app.getString(R.string.local_tts_failed)),
+                        )
+                    }
+                }
                 continuation.invokeOnCancellation { stop() }
                 if (ready) speakNow(text) else pending = text
             }
@@ -242,6 +275,7 @@ class SpeechReader @Inject constructor(
         fun stop() {
             tts.stop()
             pending = null
+            fail = null
             done?.invoke()
             done = null
         }

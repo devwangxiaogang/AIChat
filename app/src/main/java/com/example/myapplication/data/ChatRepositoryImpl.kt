@@ -98,8 +98,11 @@ class ChatRepositoryImpl @Inject constructor(
         val (conversation, provider, config) = prepared
         val rejected = rejectIfBusyOrMissingKey(conversationId, provider, config)
         if (rejected != null) return rejected
-        start(conversation.id) {
-            generate(conversation, provider, config, newUserText = trimmed)
+        if (!start(conversation.id) {
+                generate(conversation, provider, config, newUserText = trimmed)
+            }
+        ) {
+            return context.getString(R.string.generating)
         }
         return null
     }
@@ -115,8 +118,11 @@ class ChatRepositoryImpl @Inject constructor(
         }
         val hasUser = messageDao.doneMessages(conversationId).any { it.role == Role.USER.name }
         if (!hasUser) return context.getString(R.string.nothing_to_retry)
-        start(conversation.id) {
-            generate(conversation, provider, config, newUserText = null)
+        if (!start(conversation.id) {
+                generate(conversation, provider, config, newUserText = null)
+            }
+        ) {
+            return context.getString(R.string.generating)
         }
         return null
     }
@@ -143,14 +149,28 @@ class ChatRepositoryImpl @Inject constructor(
         return null
     }
 
-    private fun start(conversationId: Long, block: suspend () -> Unit) {
+    private fun start(conversationId: Long, block: suspend () -> Unit): Boolean {
         val job = appScope.launch { block() }
-        jobs[conversationId] = job
+        var claimed = false
+        jobs.compute(conversationId) { _, existing ->
+            if (existing?.isActive == true) {
+                claimed = false
+                existing
+            } else {
+                claimed = true
+                job
+            }
+        }
+        if (!claimed) {
+            job.cancel()
+            return false
+        }
         activeIds.update { it + conversationId }
         job.invokeOnCompletion {
             jobs.remove(conversationId, job)
             activeIds.update { ids -> ids - conversationId }
         }
+        return true
     }
 
     private suspend fun generate(

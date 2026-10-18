@@ -785,5 +785,5 @@ private fun OptionSheet(
 private tailrec fun Context.findActivity(): Activity = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
-    else -> error("找不到页面窗口")
+    else -> error(getString(R.string.activity_missing))
 }

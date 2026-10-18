@@ -160,6 +160,8 @@
     <string name="mic_unavailable">无法使用麦克风</string>
     <string name="need_speech_key_or_local">请在设置中填写豆包语音密钥，或将朗读切换为本机朗读</string>
     <string name="tts_failed">豆包朗读失败</string>
+    <string name="local_tts_failed">本机朗读不可用</string>
+    <string name="activity_missing">找不到页面窗口</string>
     <string name="tts_no_audio">豆包朗读没有返回声音</string>
     <string name="tts_failed_detail">豆包朗读失败（%1$s）</string>
     <string name="translate_failed_detail">豆包翻译失败（%1$s）</string>

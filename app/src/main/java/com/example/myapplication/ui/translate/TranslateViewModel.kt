@@ -116,6 +116,7 @@ class TranslateViewModel @Inject constructor(
 
     fun leaveLive() {
         stopLive()
+        if (speechReader.speaking.value?.startsWith("chat:") != true) speechReader.stop()
     }
 
     fun updateInput(value: String) {
@@ -163,8 +164,8 @@ class TranslateViewModel @Inject constructor(
             state = state.copy(message = context.getString(R.string.choose_different_target))
             return
         }
+        state = state.copy(translating = true, message = null, output = "")
         viewModelScope.launch {
-            state = state.copy(translating = true, message = null, output = "")
             try {
                 val doubao = settingsRepository.get(ProviderId.DOUBAO)
                 if (doubao.apiKey.isBlank()) error(context.getString(R.string.need_ark_key))
@@ -245,6 +246,8 @@ class TranslateViewModel @Inject constructor(
                     audio.close()
                     runCatching { record.stop() }
                 }
+            } catch (timeout: kotlinx.coroutines.TimeoutCancellationException) {
+                state = state.copy(message = context.getString(R.string.live_failed))
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -254,26 +257,41 @@ class TranslateViewModel @Inject constructor(
                 capture.join()
                 if (liveAudio === audio) {
                     liveAudio = null
-                    player.stop()
-                    val transcript = appendLine(state.sourceCaption, state.sourcePartial).trim()
-                    val translation = appendLine(state.targetCaption, state.targetPartial).trim()
-                    val keep = transcript.isNotBlank() || translation.isNotBlank()
-                    if (keep) saveLiveRecord(transcript, translation)
-                    state = state.copy(
-                        livePhase = if (keep) LivePhase.Ended else LivePhase.Idle,
-                    liveSaved = keep,
-                    hearing = true,
-                    sourcePartial = "",
-                    targetPartial = "",
-                )
-                restoreAudioRoute()
+                    liveJob = null
+                    finishLiveSession()
                 }
             }
         }
     }
 
     fun stopLive() {
-        liveAudio?.close()
+        if (!state.livePhase.active) {
+            liveAudio?.close()
+            return
+        }
+        val audio = liveAudio
+        liveAudio = null
+        audio?.close()
+        val job = liveJob
+        liveJob = null
+        finishLiveSession()
+        job?.cancel()
+    }
+
+    private fun finishLiveSession() {
+        player.stop()
+        val transcript = appendLine(state.sourceCaption, state.sourcePartial).trim()
+        val translation = appendLine(state.targetCaption, state.targetPartial).trim()
+        val keep = transcript.isNotBlank() || translation.isNotBlank()
+        if (keep) saveLiveRecord(transcript, translation)
+        state = state.copy(
+            livePhase = if (keep) LivePhase.Ended else LivePhase.Idle,
+            liveSaved = keep,
+            hearing = true,
+            sourcePartial = "",
+            targetPartial = "",
+        )
+        restoreAudioRoute()
     }
 
     fun reuseTextRecord(record: TranslationEntity) {

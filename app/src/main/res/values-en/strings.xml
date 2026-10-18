@@ -160,6 +160,8 @@
     <string name="mic_unavailable">The microphone is unavailable</string>
     <string name="need_speech_key_or_local">Add the Doubao Speech key in Settings, or switch read-aloud to the device voice</string>
     <string name="tts_failed">Doubao read-aloud failed</string>
+    <string name="local_tts_failed">Device voice is unavailable</string>
+    <string name="activity_missing">No activity window</string>
     <string name="tts_no_audio">Doubao read-aloud returned no audio</string>
     <string name="tts_failed_detail">Doubao read-aloud failed (%1$s)</string>
     <string name="translate_failed_detail">Doubao translation failed (%1$s)</string>
