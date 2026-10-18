@@ -17,8 +17,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -45,7 +47,12 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.myapplication.domain.model.ProviderConfig
 import com.example.myapplication.domain.model.ProviderId
-import com.example.myapplication.domain.model.modelLabel
+import com.example.myapplication.domain.model.SpeechPreferences
+import com.example.myapplication.domain.model.TtsEngine
+import com.example.myapplication.domain.model.VoiceChoice
+import androidx.compose.ui.res.stringResource
+import com.example.myapplication.R
+import com.example.myapplication.ui.localizedModel
 import com.example.myapplication.ui.model.ModelPickerDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -64,10 +71,10 @@ fun SettingsScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text("模型设置") },
+                title = { Text(stringResource(R.string.settings_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 },
             )
@@ -87,13 +94,16 @@ fun SettingsScreen(
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
                 Text(
-                    "密钥只保存在这台设备上，用 Android Keystore 加密。没有上次使用记录时，新对话使用这里的默认模型。已有对话在对话页更换。",
+                    stringResource(R.string.settings_intro),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 configs.values.forEach { config ->
                     ProviderForm(
                         config = config,
+                        speech = viewModel.speech,
                         onChange = viewModel::update,
+                        onEngine = viewModel::setEngine,
+                        onSpeaker = viewModel::setSpeaker,
                         onSave = { viewModel.save(config.provider) },
                     )
                 }
@@ -106,7 +116,10 @@ fun SettingsScreen(
 @Composable
 private fun ProviderForm(
     config: ProviderConfig,
+    speech: SpeechPreferences,
     onChange: (ProviderConfig) -> Unit,
+    onEngine: (TtsEngine) -> Unit,
+    onSpeaker: (VoiceChoice) -> Unit,
     onSave: () -> Unit,
 ) {
     var pickingModel by remember { mutableStateOf(false) }
@@ -119,15 +132,15 @@ private fun ProviderForm(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(config.provider.displayName, style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(config.provider.nameRes), style = MaterialTheme.typography.titleMedium)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { pickingModel = true }
                     .padding(vertical = 4.dp),
             ) {
-                Text("新对话默认模型", style = MaterialTheme.typography.labelLarge)
-                Text(config.provider.modelLabel(config.model), style = MaterialTheme.typography.bodyLarge)
+                Text(stringResource(R.string.default_model_label), style = MaterialTheme.typography.labelLarge)
+                Text(config.provider.localizedModel(config.model), style = MaterialTheme.typography.bodyLarge)
                 Text(
                     config.model,
                     style = MaterialTheme.typography.bodySmall,
@@ -138,7 +151,7 @@ private fun ProviderForm(
                 value = config.apiKey,
                 onValueChange = { onChange(config.copy(apiKey = it)) },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("API Key") },
+                label = { Text(stringResource(R.string.api_key)) },
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 singleLine = true,
@@ -148,37 +161,58 @@ private fun ProviderForm(
                     value = config.speechApiKey,
                     onValueChange = { onChange(config.copy(speechApiKey = it)) },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("语音识别 API Key") },
+                    label = { Text(stringResource(R.string.speech_api_key)) },
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     singleLine = true,
-                    supportingText = { Text("豆包语音控制台的 Key，不能用上面的方舟对话密钥") },
+                    supportingText = { Text(stringResource(R.string.speech_api_key_help)) },
                 )
+                Text(stringResource(R.string.read_aloud), style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TtsEngine.entries.forEach { engine ->
+                        FilterChip(
+                            selected = speech.engine == engine,
+                            onClick = { onEngine(engine) },
+                            label = { Text(stringResource(engine.labelRes)) },
+                        )
+                    }
+                }
+                if (speech.engine == TtsEngine.DOUBAO) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(VoiceChoice.FEMALE, VoiceChoice.MALE).forEach { voice ->
+                            FilterChip(
+                                selected = speech.speaker == voice,
+                                onClick = { onSpeaker(voice) },
+                                label = { Text(stringResource(voice.labelRes)) },
+                            )
+                        }
+                    }
+                }
             }
             TextButton(onClick = { showUrl = !showUrl }) {
-                Text(if (showUrl) "收起接口地址" else "接口地址")
+                Text(stringResource(if (showUrl) R.string.hide_endpoint else R.string.show_endpoint))
             }
             if (showUrl) {
                 OutlinedTextField(
                     value = config.baseUrl,
                     onValueChange = { onChange(config.copy(baseUrl = it)) },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Base URL") },
+                    label = { Text(stringResource(R.string.base_url)) },
                     singleLine = true,
                 )
             }
             Button(onClick = onSave, modifier = Modifier.fillMaxWidth()) {
-                Text("保存${config.provider.displayName}")
+                Text(stringResource(R.string.save_provider, stringResource(config.provider.nameRes)))
             }
         }
     }
     if (pickingModel) {
         ModelPickerDialog(
-            title = "${config.provider.displayName}默认模型",
+            title = stringResource(R.string.provider_default_model, stringResource(config.provider.nameRes)),
             providers = listOf(config.provider),
             selectedProvider = config.provider,
             selectedId = config.model,
-            note = "保存后，只影响之后新建、且还没有上次使用记录的对话。",
+            note = stringResource(R.string.default_model_note),
             onSelect = { _, model ->
                 onChange(config.copy(model = model))
                 pickingModel = false

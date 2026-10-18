@@ -1,6 +1,10 @@
 package com.example.myapplication.data
 
+import android.content.Context
 import android.os.SystemClock
+import com.example.myapplication.R
+import com.example.myapplication.ui.isDefaultConversationTitle
+import dagger.hilt.android.qualifiers.ApplicationContext
 import com.example.myapplication.data.local.ConversationDao
 import com.example.myapplication.data.local.ConversationEntity
 import com.example.myapplication.data.local.MessageDao
@@ -33,6 +37,7 @@ import javax.inject.Singleton
 
 @Singleton
 class ChatRepositoryImpl @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val conversationDao: ConversationDao,
     private val messageDao: MessageDao,
     private val providers: Map<ProviderId, @JvmSuppressWildcards LlmProvider>,
@@ -60,10 +65,10 @@ class ChatRepositoryImpl @Inject constructor(
         val chosen = model.trim().ifBlank { config.model.ifBlank { provider.defaultModel } }
         return conversationDao.insert(
             ConversationEntity(
-                title = NEW_TITLE,
+                title = context.getString(R.string.new_chat),
                 provider = provider.name,
                 model = chosen,
-                systemPrompt = DEFAULT_PROMPT,
+                systemPrompt = context.getString(R.string.assistant_prompt),
                 updatedAt = System.currentTimeMillis(),
             ),
         )
@@ -71,10 +76,10 @@ class ChatRepositoryImpl @Inject constructor(
 
     override suspend fun updateModel(conversationId: Long, model: String): String? {
         val chosen = model.trim()
-        if (chosen.isEmpty()) return "请选择模型"
+        if (chosen.isEmpty()) return context.getString(R.string.choose_model_error)
         // 生成过程中换模型会导致同一次回复的上下文和计费模型不一致。
-        if (jobs[conversationId]?.isActive == true) return "正在生成回复"
-        val conversation = conversationDao.get(conversationId) ?: return "会话不存在"
+        if (jobs[conversationId]?.isActive == true) return context.getString(R.string.generating)
+        val conversation = conversationDao.get(conversationId) ?: return context.getString(R.string.conversation_missing)
         conversationDao.update(
             conversation.copy(model = chosen, updatedAt = System.currentTimeMillis()),
         )
@@ -88,8 +93,8 @@ class ChatRepositoryImpl @Inject constructor(
 
     override suspend fun send(conversationId: Long, text: String): String? {
         val trimmed = text.trim()
-        if (trimmed.isEmpty()) return "请输入内容"
-        val prepared = prepare(conversationId) ?: return "会话不存在"
+        if (trimmed.isEmpty()) return context.getString(R.string.enter_message)
+        val prepared = prepare(conversationId) ?: return context.getString(R.string.conversation_missing)
         val (conversation, provider, config) = prepared
         val rejected = rejectIfBusyOrMissingKey(conversationId, provider, config)
         if (rejected != null) return rejected
@@ -100,16 +105,16 @@ class ChatRepositoryImpl @Inject constructor(
     }
 
     override suspend fun retry(conversationId: Long): String? {
-        val prepared = prepare(conversationId) ?: return "会话不存在"
+        val prepared = prepare(conversationId) ?: return context.getString(R.string.conversation_missing)
         val (conversation, provider, config) = prepared
         val rejected = rejectIfBusyOrMissingKey(conversationId, provider, config)
         if (rejected != null) return rejected
-        val last = messageDao.latest(conversationId) ?: return "没有可重试的消息"
+        val last = messageDao.latest(conversationId) ?: return context.getString(R.string.nothing_to_retry)
         if (last.role == Role.ASSISTANT.name && last.status == MessageStatus.FAILED.name) {
             messageDao.delete(last.id)
         }
         val hasUser = messageDao.doneMessages(conversationId).any { it.role == Role.USER.name }
-        if (!hasUser) return "没有可重试的消息"
+        if (!hasUser) return context.getString(R.string.nothing_to_retry)
         start(conversation.id) {
             generate(conversation, provider, config, newUserText = null)
         }
@@ -131,8 +136,10 @@ class ChatRepositoryImpl @Inject constructor(
         provider: ProviderId,
         config: ProviderConfig,
     ): String? {
-        if (jobs[conversationId]?.isActive == true) return "正在生成回复"
-        if (config.apiKey.isBlank()) return "请先在设置中填写${provider.displayName}的 API Key"
+        if (jobs[conversationId]?.isActive == true) return context.getString(R.string.generating)
+        if (config.apiKey.isBlank()) {
+            return context.getString(R.string.need_provider_key, context.getString(provider.nameRes))
+        }
         return null
     }
 
@@ -175,7 +182,7 @@ class ChatRepositoryImpl @Inject constructor(
             }
             conversationDao.update(
                 conversation.copy(
-                    title = if (newUserText != null && conversation.title == NEW_TITLE) {
+                    title = if (newUserText != null && isDefaultConversationTitle(conversation.title)) {
                         newUserText.take(24)
                     } else {
                         conversation.title
@@ -202,7 +209,7 @@ class ChatRepositoryImpl @Inject constructor(
                     add(WireMessage(Role.valueOf(row.role), row.content))
                 }
             }
-            val llm = providers[provider] ?: error("未注册${provider.displayName}")
+            val llm = providers[provider] ?: error(context.getString(R.string.provider_missing, context.getString(provider.nameRes)))
             var lastFlush = 0L
             llm.stream(
                 apiKey = config.apiKey,
@@ -250,7 +257,7 @@ class ChatRepositoryImpl @Inject constructor(
                     content,
                     reasoning,
                     MessageStatus.FAILED.name,
-                    error.message ?: "请求失败",
+                    error.message ?: context.getString(R.string.request_failed),
                 )
             }
         }
@@ -303,8 +310,6 @@ class ChatRepositoryImpl @Inject constructor(
     )
 
     private companion object {
-        const val NEW_TITLE = "新对话"
-        const val DEFAULT_PROMPT = "你是一个有帮助的助手。"
         const val CONTEXT_LIMIT = 20
         const val FLUSH_INTERVAL_MS = 100L
     }

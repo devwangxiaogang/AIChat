@@ -25,7 +25,7 @@ object SseDecoder {
         val chunk = try {
             json.decodeFromString<ChatChunk>(data)
         } catch (error: Exception) {
-            return listOf(ChunkPiece.Invalid(error.message ?: "无法解析模型响应"))
+            return listOf(ChunkPiece.Invalid(error.message.orEmpty()))
         }
         val apiError = chunk.error?.message
         if (!apiError.isNullOrBlank()) return listOf(ChunkPiece.Invalid(apiError))

@@ -1,6 +1,9 @@
 package com.example.myapplication.data.remote
 
+import android.content.Context
+import com.example.myapplication.R
 import com.example.myapplication.domain.model.StreamEvent
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -21,6 +24,7 @@ import javax.inject.Singleton
 /** DeepSeek 与豆包方舟都使用 OpenAI 兼容的流式 chat/completions。 */
 @Singleton
 class OpenAiCompatibleClient @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val http: OkHttpClient,
     private val json: Json,
 ) {
@@ -40,7 +44,7 @@ class OpenAiCompatibleClient @Inject constructor(
             call.execute().use { response ->
                 val payload = response.body
                 if (payload == null) {
-                    emit(StreamEvent.Failed("服务端没有返回内容"))
+                    emit(StreamEvent.Failed(context.getString(R.string.empty_server)))
                     return@flow
                 }
                 if (!response.isSuccessful) {
@@ -70,7 +74,7 @@ class OpenAiCompatibleClient @Inject constructor(
                                 return@flow
                             }
                             is ChunkPiece.Invalid -> {
-                                emit(StreamEvent.Failed(piece.message))
+                                emit(StreamEvent.Failed(piece.message.ifBlank { context.getString(R.string.parse_model_failed) }))
                                 return@flow
                             }
                         }
@@ -84,7 +88,7 @@ class OpenAiCompatibleClient @Inject constructor(
             if (!currentCoroutineContext().isActive) {
                 throw CancellationException("cancelled", error)
             }
-            emit(StreamEvent.Failed(error.message?.takeIf { it.isNotBlank() } ?: "网络请求失败"))
+            emit(StreamEvent.Failed(error.message?.takeIf { it.isNotBlank() } ?: context.getString(R.string.network_failed)))
         }
     }.flowOn(Dispatchers.IO)
 
@@ -104,7 +108,7 @@ class OpenAiCompatibleClient @Inject constructor(
         val parsed = runCatching {
             json.decodeFromString<ApiErrorBody>(raw).error?.message
         }.getOrNull()
-        return parsed?.takeIf { it.isNotBlank() } ?: "请求失败（$code）"
+        return parsed?.takeIf { it.isNotBlank() } ?: context.getString(R.string.request_failed_code, code)
     }
 
     private companion object {

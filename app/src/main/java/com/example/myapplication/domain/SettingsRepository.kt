@@ -3,6 +3,7 @@ package com.example.myapplication.domain
 import com.example.myapplication.domain.model.ProviderConfig
 import com.example.myapplication.domain.model.ProviderId
 import com.example.myapplication.domain.model.SelectedModel
+import com.example.myapplication.domain.model.SpeechPreferences
 import kotlinx.coroutines.flow.Flow
 
 interface SettingsRepository {
@@ -17,4 +18,13 @@ interface SettingsRepository {
 
     /** 一次回复成功结束后记住模型，供下次新建对话直接使用。 */
     suspend fun rememberRecent(provider: ProviderId, model: String)
+
+    fun observeSpeech(): Flow<SpeechPreferences>
+
+    suspend fun speech(): SpeechPreferences
+
+    suspend fun saveSpeech(preferences: SpeechPreferences)
+
+    /** 连续点选语言或音色时，在同一把锁里读改写，避免后一次覆盖前一次。 */
+    suspend fun editSpeech(transform: (SpeechPreferences) -> SpeechPreferences)
 }

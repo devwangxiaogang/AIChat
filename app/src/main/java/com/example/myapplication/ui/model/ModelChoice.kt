@@ -27,6 +27,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.example.myapplication.R
 import com.example.myapplication.domain.model.ProviderId
 import com.example.myapplication.domain.model.groupedModels
 
@@ -78,14 +80,14 @@ fun ModelPickerDialog(
                 providers.forEach { provider ->
                     if (providers.size > 1) {
                         Text(
-                            provider.displayName,
+                            stringResource(provider.nameRes),
                             style = MaterialTheme.typography.titleSmall,
                             modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
                         )
                     }
                     provider.groupedModels().forEach { (group, options) ->
                         Text(
-                            group,
+                            stringResource(group),
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
@@ -100,8 +102,8 @@ fun ModelPickerDialog(
                         }
                     }
                     ModelRow(
-                        label = "其他模型",
-                        detail = "填写接入点或控制台给出的模型 ID",
+                        label = stringResource(R.string.other_model),
+                        detail = stringResource(R.string.other_model_detail),
                         selected = customOpen && customProvider == provider,
                         onClick = {
                             customProvider = provider
@@ -116,7 +118,7 @@ fun ModelPickerDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 8.dp),
-                        label = { Text("${customProvider.displayName}模型 ID") },
+                        label = { Text(stringResource(R.string.provider_model_id, stringResource(customProvider.nameRes))) },
                         singleLine = true,
                     )
                     Spacer(Modifier.height(12.dp))
@@ -124,7 +126,7 @@ fun ModelPickerDialog(
                         onClick = { onSelect(customProvider, customId.trim()) },
                         enabled = customId.isNotBlank(),
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text("使用这个 ID") }
+                    ) { Text(stringResource(R.string.use_this_id)) }
                 }
                 Spacer(Modifier.height(12.dp))
             }

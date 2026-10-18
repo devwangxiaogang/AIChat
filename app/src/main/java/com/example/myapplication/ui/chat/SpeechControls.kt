@@ -2,21 +2,17 @@ package com.example.myapplication.ui.chat
 
 import android.annotation.SuppressLint
 import android.content.Context
+import com.example.myapplication.R
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Handler
 import android.os.Looper
-import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import java.io.ByteArrayOutputStream
-import java.util.Locale
 
 /** 麦克风采集 16 kHz 单声道 PCM，停止后封装成 WAV 交给豆包识别。 */
 class SpeechInput(
+    private val context: Context,
     private val onText: (String) -> Unit,
     private val onPhase: (VoicePhase) -> Unit,
     private val onError: (String) -> Unit,
@@ -36,7 +32,7 @@ class SpeechInput(
         prefix = currentText
         val audio = openMic()
         if (audio == null) {
-            onError("无法打开麦克风")
+            onError(context.getString(R.string.mic_open_failed))
             return
         }
         pcm = ByteArrayOutputStream()
@@ -66,7 +62,7 @@ class SpeechInput(
         val wav = pcmToWav(pcm.toByteArray())
         if (wav.size <= WAV_HEADER + MIN_PCM) {
             onPhase(VoicePhase.Idle)
-            onError("没有识别到语音")
+            onError(context.getString(R.string.asr_empty))
             return
         }
         onPhase(VoicePhase.Recognizing)
@@ -157,108 +153,4 @@ internal fun pcmToWav(pcm: ByteArray, sampleRate: Int = 16_000): ByteArray {
     int32(pcm.size)
     out.write(pcm)
     return out.toByteArray()
-}
-
-/** 用系统中文语音朗读消息。长文本按 3000 字分段，避免一次入队失败。 */
-class MessageSpeaker(context: Context) {
-    private val main = Handler(Looper.getMainLooper())
-    private var ready = false
-    private var pending: Pair<Long, String>? = null
-    private var activeUtterance: String? = null
-    var speakingId by mutableStateOf<Long?>(null)
-        private set
-
-    private val tts: TextToSpeech = TextToSpeech(context) { status ->
-        if (status == TextToSpeech.SUCCESS) {
-            val language: Int = tts.setLanguage(Locale.SIMPLIFIED_CHINESE)
-            if (language == TextToSpeech.LANG_MISSING_DATA || language == TextToSpeech.LANG_NOT_SUPPORTED) {
-                tts.setLanguage(Locale.CHINESE)
-            }
-            ready = true
-            pending?.let { (id, text) -> speak(id, text) }
-            pending = null
-        }
-    }
-
-    init {
-        tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) = Unit
-
-            override fun onDone(utteranceId: String?) {
-                clearIfActive(utteranceId)
-            }
-
-            @Deprecated("Deprecated in Java")
-            override fun onError(utteranceId: String?) {
-                clearIfActive(utteranceId)
-            }
-
-            override fun onError(utteranceId: String?, errorCode: Int) {
-                clearIfActive(utteranceId)
-            }
-
-            private fun clearIfActive(utteranceId: String?) {
-                if (utteranceId == activeUtterance) {
-                    main.post { speakingId = null }
-                }
-            }
-        })
-    }
-
-    fun toggle(id: Long, text: String) {
-        if (speakingId == id) {
-            tts.stop()
-            speakingId = null
-            activeUtterance = null
-            return
-        }
-        if (!ready) {
-            pending = id to text
-            speakingId = id
-            return
-        }
-        speak(id, text)
-    }
-
-    fun shutdown() {
-        tts.stop()
-        tts.shutdown()
-    }
-
-    private fun speak(id: Long, text: String) {
-        val chunks = speechChunks(text)
-        if (chunks.isEmpty()) return
-        speakingId = id
-        chunks.forEachIndexed { index, chunk ->
-            val utteranceId = "$id#$index"
-            if (index == chunks.lastIndex) activeUtterance = utteranceId
-            val mode = if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
-            tts.speak(chunk, mode, null, utteranceId)
-        }
-    }
-
-    private fun speechChunks(text: String): List<String> {
-        val clean = text.trim()
-        if (clean.isEmpty()) return emptyList()
-        if (clean.length <= CHUNK) return listOf(clean)
-        val parts = mutableListOf<String>()
-        var rest = clean
-        while (rest.isNotEmpty()) {
-            if (rest.length <= CHUNK) {
-                parts += rest
-                break
-            }
-            val window = rest.substring(0, CHUNK)
-            val cut = listOf('。', '！', '？', '\n', '.', '!', '?')
-                .maxOf { window.lastIndexOf(it) }
-            val end = if (cut >= 80) cut + 1 else CHUNK
-            parts += rest.substring(0, end)
-            rest = rest.substring(end).trimStart()
-        }
-        return parts
-    }
-
-    private companion object {
-        const val CHUNK = 3000
-    }
 }

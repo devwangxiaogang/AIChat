@@ -5,9 +5,14 @@ import com.example.myapplication.domain.SettingsRepository
 import com.example.myapplication.domain.model.ProviderConfig
 import com.example.myapplication.domain.model.ProviderId
 import com.example.myapplication.domain.model.SelectedModel
+import com.example.myapplication.domain.model.SpeechPreferences
+import com.example.myapplication.domain.model.TtsEngine
+import com.example.myapplication.domain.model.VoiceChoice
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -16,6 +21,8 @@ class SettingsRepositoryImpl @Inject constructor(
     private val prefs: SharedPreferences,
 ) : SettingsRepository {
     private val state = MutableStateFlow(readAll())
+    private val speechState = MutableStateFlow(readSpeech())
+    private val speechEdit = Mutex()
 
     override fun observe(provider: ProviderId): Flow<ProviderConfig> =
         state.map { configs -> configs.getValue(provider) }
@@ -51,6 +58,33 @@ class SettingsRepositoryImpl @Inject constructor(
             .apply()
     }
 
+    override fun observeSpeech(): Flow<SpeechPreferences> = speechState
+
+    override suspend fun speech(): SpeechPreferences = speechState.value
+
+    override suspend fun saveSpeech(preferences: SpeechPreferences) = speechEdit.withLock {
+        writeSpeech(preferences)
+    }
+
+    override suspend fun editSpeech(transform: (SpeechPreferences) -> SpeechPreferences) = speechEdit.withLock {
+        writeSpeech(transform(speechState.value))
+    }
+
+    private fun writeSpeech(preferences: SpeechPreferences) {
+        val saved = preferences.copy(translationModel = preferences.translationModel.trim())
+        speechState.value = saved
+        prefs.edit()
+            .putString(TTS_ENGINE, saved.engine.name)
+            .putString(TTS_SPEAKER, saved.speaker.name)
+            .putString(TRANSLATION_MODEL, saved.translationModel)
+            .putString(TEXT_SOURCE, saved.textSource)
+            .putString(TEXT_TARGET, saved.textTarget)
+            .putString(LIVE_SOURCE, saved.liveSource)
+            .putString(LIVE_TARGET, saved.liveTarget)
+            .putString(LIVE_VOICE, saved.liveVoice.name)
+            .apply()
+    }
+
     private fun readAll(): Map<ProviderId, ProviderConfig> =
         ProviderId.entries.associateWith { provider ->
             ProviderConfig(
@@ -66,10 +100,39 @@ class SettingsRepositoryImpl @Inject constructor(
             )
         }
 
+    private fun readSpeech(): SpeechPreferences {
+        val defaults = SpeechPreferences()
+        return SpeechPreferences(
+            engine = enumOr(prefs.getString(TTS_ENGINE, null), defaults.engine),
+            speaker = enumOr(prefs.getString(TTS_SPEAKER, null), defaults.speaker).readingVoice(),
+            translationModel = prefs.getString(TRANSLATION_MODEL, null)?.takeIf { it.isNotBlank() }
+                ?: defaults.translationModel,
+            textSource = prefs.getString(TEXT_SOURCE, null) ?: defaults.textSource,
+            textTarget = prefs.getString(TEXT_TARGET, null)?.takeIf { it.isNotBlank() } ?: defaults.textTarget,
+            liveSource = prefs.getString(LIVE_SOURCE, null)?.takeIf { it.isNotBlank() } ?: defaults.liveSource,
+            liveTarget = prefs.getString(LIVE_TARGET, null)?.takeIf { it.isNotBlank() } ?: defaults.liveTarget,
+            liveVoice = enumOr(prefs.getString(LIVE_VOICE, null), defaults.liveVoice),
+        )
+    }
+
+    private fun VoiceChoice.readingVoice(): VoiceChoice =
+        if (this == VoiceChoice.CLONE) VoiceChoice.FEMALE else this
+
+    private inline fun <reified T : Enum<T>> enumOr(name: String?, fallback: T): T =
+        name?.let { runCatching { enumValueOf<T>(it) }.getOrNull() } ?: fallback
+
     private fun key(provider: ProviderId, field: String) = "${provider.name}_$field"
 
     private companion object {
         const val RECENT_PROVIDER = "recentProvider"
         const val RECENT_MODEL = "recentModel"
+        const val TTS_ENGINE = "ttsEngine"
+        const val TTS_SPEAKER = "ttsSpeaker"
+        const val TRANSLATION_MODEL = "translationModel"
+        const val TEXT_SOURCE = "textSourceLang"
+        const val TEXT_TARGET = "textTargetLang"
+        const val LIVE_SOURCE = "liveSourceLang"
+        const val LIVE_TARGET = "liveTargetLang"
+        const val LIVE_VOICE = "liveVoice"
     }
 }

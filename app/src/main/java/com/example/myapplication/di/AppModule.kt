@@ -8,6 +8,7 @@ import androidx.security.crypto.MasterKey
 import com.example.myapplication.data.local.AppDatabase
 import com.example.myapplication.data.local.ConversationDao
 import com.example.myapplication.data.local.MessageDao
+import com.example.myapplication.data.local.TranslationDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -61,7 +62,7 @@ object AppModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "ai_chat.db")
-            // 当前仍是第一版表结构，结构变化时直接重建本地会话库。
+            // 表结构变化时直接重建本地库。翻译记录和会话都只存在这台设备上。
             .fallbackToDestructiveMigration(true)
             .build()
 
@@ -70,6 +71,9 @@ object AppModule {
 
     @Provides
     fun provideMessageDao(database: AppDatabase): MessageDao = database.messageDao()
+
+    @Provides
+    fun provideTranslationDao(database: AppDatabase): TranslationDao = database.translationDao()
 
     @Provides
     @Singleton

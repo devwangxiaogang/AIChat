@@ -1,5 +1,8 @@
 package com.example.myapplication.data.remote
 
+import android.content.Context
+import com.example.myapplication.R
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -34,6 +37,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class DoubaoAsrClient @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val http: OkHttpClient,
     private val json: Json,
 ) {
@@ -64,7 +68,7 @@ class DoubaoAsrClient @Inject constructor(
                     )
                     val detail = message.ifBlank { status.ifBlank { t.message.orEmpty() } }
                     val error = IllegalStateException(
-                        detail.ifBlank { "豆包语音连接失败" }.let { "豆包语音识别失败（$it）" },
+                        context.getString(R.string.asr_failed_detail, detail.ifBlank { context.getString(R.string.asr_connect_failed) }),
                         t,
                     )
                     failure.complete(error)
@@ -78,7 +82,7 @@ class DoubaoAsrClient @Inject constructor(
         )
         try {
             if (!socket.send(clientFrame(FULL_CLIENT, 0, JSON_SERIAL, gzip(requestPayload())).toByteString())) {
-                error("豆包语音连接失败")
+                error(context.getString(R.string.asr_connect_failed))
             }
             var offset = 0
             while (offset < wav.size) {
@@ -88,7 +92,7 @@ class DoubaoAsrClient @Inject constructor(
                 val sent = socket.send(
                     clientFrame(AUDIO_ONLY, flags, RAW_SERIAL, gzip(wav.copyOfRange(offset, end))).toByteString(),
                 )
-                if (!sent) error("豆包语音连接失败")
+                if (!sent) error(context.getString(R.string.asr_connect_failed))
                 offset = end
             }
             var spoken = ""
@@ -97,12 +101,12 @@ class DoubaoAsrClient @Inject constructor(
                 val parsed = parseServer(packet)
                 if (parsed.failure != null) {
                     android.util.Log.w("DoubaoAsr", "server ${parsed.failure}")
-                    error("豆包语音识别失败（${parsed.failure}）")
+                    error(context.getString(R.string.asr_failed_detail, parsed.failure))
                 }
                 if (parsed.text.isNotBlank()) spoken = parsed.text
                 if (parsed.finished) break
             }
-            spoken.trim().ifEmpty { error("没有识别到语音") }
+            spoken.trim().ifEmpty { error(context.getString(R.string.asr_empty)) }
         } finally {
             socket.close(1000, "done")
             messages.close()
@@ -140,21 +144,21 @@ class DoubaoAsrClient @Inject constructor(
     }
 
     private fun parseServer(packet: ByteArray): ServerMessage {
-        if (packet.size < 8) return ServerMessage(failure = "响应不完整")
+        if (packet.size < 8) return ServerMessage(failure = context.getString(R.string.response_incomplete))
         val headerSize = (packet[0].toInt() and 0x0f) * 4
         val messageType = (packet[1].toInt() and 0xf0) ushr 4
         val flags = packet[1].toInt() and 0x0f
         val compression = packet[2].toInt() and 0x0f
         var offset = headerSize
         if (messageType == ERROR) {
-            if (packet.size < offset + 8) return ServerMessage(failure = "响应不完整")
+            if (packet.size < offset + 8) return ServerMessage(failure = context.getString(R.string.response_incomplete))
             offset += 4
             val size = readInt(packet, offset)
             offset += 4
-            return ServerMessage(failure = decodePayload(packet, offset, size, compression).ifBlank { "服务端错误" })
+            return ServerMessage(failure = decodePayload(packet, offset, size, compression).ifBlank { context.getString(R.string.server_error) })
         }
         if (flags and 0x01 != 0) offset += 4
-        if (packet.size < offset + 4) return ServerMessage(failure = "响应不完整")
+        if (packet.size < offset + 4) return ServerMessage(failure = context.getString(R.string.response_incomplete))
         val size = readInt(packet, offset)
         offset += 4
         val body = decodePayload(packet, offset, size, compression)

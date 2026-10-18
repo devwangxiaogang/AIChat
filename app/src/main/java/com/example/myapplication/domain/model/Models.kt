@@ -1,43 +1,46 @@
 package com.example.myapplication.domain.model
 
-/** 目录中的一个模型。id 发给接口，label 给用户看，group 用于选择器分组。 */
+import androidx.annotation.StringRes
+import com.example.myapplication.R
+
+/** 目录中的一个模型。id 发给接口，label 给用户看，groupRes 用于选择器分组。 */
 data class ModelOption(
     val id: String,
     val label: String,
-    val group: String,
+    @StringRes val groupRes: Int,
 )
 
 /** 对话服务商。豆包目录里的 DeepSeek、GLM 走方舟地址和方舟密钥，与官方 DeepSeek 分开。 */
 enum class ProviderId(
-    val displayName: String,
+    @StringRes val nameRes: Int,
     val defaultBaseUrl: String,
     val defaultModel: String,
     val models: List<ModelOption>,
 ) {
     DEEPSEEK(
-        displayName = "DeepSeek",
+        nameRes = R.string.provider_deepseek,
         defaultBaseUrl = "https://api.deepseek.com",
         defaultModel = "deepseek-flash",
         models = listOf(
-            ModelOption("deepseek-flash", "Flash", "官方接口"),
-            ModelOption("deepseek-v4-pro", "V4 Pro", "官方接口"),
+            ModelOption("deepseek-flash", "Flash", R.string.group_official),
+            ModelOption("deepseek-v4-pro", "V4 Pro", R.string.group_official),
         ),
     ),
     DOUBAO(
-        displayName = "豆包",
+        nameRes = R.string.provider_doubao,
         defaultBaseUrl = "https://ark.cn-beijing.volces.com/api/v3",
         defaultModel = "doubao-seed-2-1-lite-260915",
         models = listOf(
-            ModelOption("doubao-seed-2-1-lite-260915", "Seed 2.1 Lite", "Seed"),
-            ModelOption("doubao-seed-evolving", "Seed Evolving", "Seed"),
-            ModelOption("doubao-seed-2-1-turbo-260628", "Seed 2.1 Turbo", "Seed"),
-            ModelOption("doubao-seed-2-0-mini-260428", "Seed 2.0 Mini", "Seed"),
-            ModelOption("doubao-seed-2-0-lite-260428", "Seed 2.0 Lite", "Seed"),
-            ModelOption("deepseek-v4-1-flash-260910", "DeepSeek V4.1 Flash", "方舟上的 DeepSeek"),
-            ModelOption("deepseek-v4-pro-ga-260813", "DeepSeek V4 Pro", "方舟上的 DeepSeek"),
-            ModelOption("deepseek-v4-flash-ga-260731", "DeepSeek V4 Flash", "方舟上的 DeepSeek"),
-            ModelOption("glm-5-3-flash-260828", "GLM 5.3 Flash", "方舟上的 GLM"),
-            ModelOption("glm-5-2-260617", "GLM 5.2", "方舟上的 GLM"),
+            ModelOption("doubao-seed-2-1-lite-260915", "Seed 2.1 Lite", R.string.group_seed),
+            ModelOption("doubao-seed-evolving", "Seed Evolving", R.string.group_seed),
+            ModelOption("doubao-seed-2-1-turbo-260628", "Seed 2.1 Turbo", R.string.group_seed),
+            ModelOption("doubao-seed-2-0-mini-260428", "Seed 2.0 Mini", R.string.group_seed),
+            ModelOption("doubao-seed-2-0-lite-260428", "Seed 2.0 Lite", R.string.group_seed),
+            ModelOption("deepseek-v4-1-flash-260910", "DeepSeek V4.1 Flash", R.string.group_ark_deepseek),
+            ModelOption("deepseek-v4-pro-ga-260813", "DeepSeek V4 Pro", R.string.group_ark_deepseek),
+            ModelOption("deepseek-v4-flash-ga-260731", "DeepSeek V4 Flash", R.string.group_ark_deepseek),
+            ModelOption("glm-5-3-flash-260828", "GLM 5.3 Flash", R.string.group_ark_glm),
+            ModelOption("glm-5-2-260617", "GLM 5.2", R.string.group_ark_glm),
         ),
     ),
 }
@@ -51,22 +54,18 @@ data class ModelChoice(
 fun ProviderId.modelChoices(): List<ModelChoice> =
     models.map { option -> ModelChoice(this, option.id, option.label) }
 
-/** 目录里没有的旧 ID 显示为「自定义」，ID 本身仍保留。 */
-fun ProviderId.modelLabel(id: String): String =
-    models.firstOrNull { it.id == id }?.label ?: "自定义"
+/** 目录里没有的旧 ID 由界面显示为「自定义」，ID 本身仍保留。 */
+fun ProviderId.knownModelLabel(id: String): String? =
+    models.firstOrNull { it.id == id }?.label
 
-fun ProviderId.modelSummary(id: String): String = "$displayName · ${modelLabel(id)}"
-
-fun ProviderId.groupedModels(): List<Pair<String, List<ModelOption>>> =
-    models.groupBy { it.group }.entries.map { it.key to it.value }
+fun ProviderId.groupedModels(): List<Pair<Int, List<ModelOption>>> =
+    models.groupBy { it.groupRes }.entries.map { it.key to it.value }
 
 /** 新建对话时使用的服务商和模型：优先上次成功发送，否则用已配置密钥的默认模型。 */
 data class SelectedModel(
     val provider: ProviderId,
     val model: String,
-) {
-    val summary: String get() = provider.modelSummary(model)
-}
+)
 
 enum class Role {
     SYSTEM,

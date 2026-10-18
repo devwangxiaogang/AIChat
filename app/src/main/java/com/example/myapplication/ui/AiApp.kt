@@ -9,10 +9,13 @@ import androidx.navigation.navArgument
 import com.example.myapplication.ui.chat.ChatScreen
 import com.example.myapplication.ui.list.ConversationListScreen
 import com.example.myapplication.ui.settings.SettingsScreen
+import com.example.myapplication.ui.shell.AppSection
+import com.example.myapplication.ui.translate.TranslateScreen
 
-/** 三个页面：会话列表、某个会话、模型与密钥设置。 */
+/** 会话列表、翻译、某个会话，以及模型与密钥设置。 */
 object Routes {
     const val Conversations = "conversations"
+    const val Translate = "translate"
     const val Settings = "settings"
     const val Chat = "chat/{id}"
 
@@ -26,8 +29,11 @@ fun AiApp() {
         composable(Routes.Conversations) {
             ConversationListScreen(
                 onOpenChat = { id -> nav.navigate(Routes.chat(id)) },
-                onOpenSettings = { nav.navigate(Routes.Settings) },
+                onNavigate = { section -> nav.openSection(section) },
             )
+        }
+        composable(Routes.Translate) {
+            TranslateScreen(onNavigate = { section -> nav.openSection(section) })
         }
         composable(
             route = Routes.Chat,
@@ -41,5 +47,21 @@ fun AiApp() {
         composable(Routes.Settings) {
             SettingsScreen(onBack = { nav.popBackStack() })
         }
+    }
+}
+
+private fun androidx.navigation.NavHostController.openSection(section: AppSection) {
+    val route = when (section) {
+        AppSection.Chat -> Routes.Conversations
+        AppSection.Translate -> Routes.Translate
+        AppSection.Settings -> Routes.Settings
+    }
+    if (section == AppSection.Settings) {
+        navigate(route)
+        return
+    }
+    navigate(route) {
+        popUpTo(Routes.Conversations) { inclusive = false }
+        launchSingleTop = true
     }
 }

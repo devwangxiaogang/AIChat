@@ -14,7 +14,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -22,11 +21,9 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -41,18 +38,24 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.myapplication.domain.model.Conversation
 import com.example.myapplication.domain.model.ProviderId
-import com.example.myapplication.domain.model.modelSummary
+import com.example.myapplication.R
+import com.example.myapplication.ui.isDefaultConversationTitle
+import com.example.myapplication.ui.localizedSummary
 import com.example.myapplication.ui.model.ModelPickerDialog
+import androidx.compose.ui.res.stringResource
+import com.example.myapplication.ui.shell.AppSection
+import com.example.myapplication.ui.shell.SectionScaffold
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.ui.platform.LocalConfiguration
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConversationListScreen(
     onOpenChat: (Long) -> Unit,
-    onOpenSettings: () -> Unit,
+    onNavigate: (AppSection) -> Unit,
     viewModel: ConversationListViewModel = hiltViewModel(),
 ) {
     val conversations by viewModel.conversations.collectAsStateWithLifecycle()
@@ -61,23 +64,15 @@ fun ConversationListScreen(
     var pendingDelete by remember { mutableStateOf<Conversation?>(null) }
     val scope = rememberCoroutineScope()
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("AI 对话") },
-                actions = {
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Filled.Settings, contentDescription = "设置")
-                    }
-                },
-            )
-        },
-        containerColor = MaterialTheme.colorScheme.background,
+    SectionScaffold(
+        section = AppSection.Chat,
+        title = stringResource(R.string.section_chat),
+        onNavigate = onNavigate,
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { showCreate = true },
                 icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                text = { Text("新对话") },
+                text = { Text(stringResource(R.string.new_chat)) },
             )
         },
     ) { padding ->
@@ -90,13 +85,13 @@ fun ConversationListScreen(
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.Start,
             ) {
-                Text("还没有会话", style = MaterialTheme.typography.titleLarge)
+                Text(stringResource(R.string.no_conversations), style = MaterialTheme.typography.titleLarge)
                 Text(
-                    "密钥在右上角设置里填写。",
+                    stringResource(R.string.keys_in_settings),
                     modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Button(onClick = { showCreate = true }) { Text("开始对话") }
+                Button(onClick = { showCreate = true }) { Text(stringResource(R.string.start_chat)) }
             }
         } else {
             LazyColumn(
@@ -123,8 +118,8 @@ fun ConversationListScreen(
     if (showCreate) {
         AlertDialog(
             onDismissRequest = { showCreate = false },
-            title = { Text("新对话") },
-            text = { Text("使用 ${viewModel.starting.summary}") },
+            title = { Text(stringResource(R.string.new_chat)) },
+            text = { Text(stringResource(R.string.use_model, viewModel.starting.provider.localizedSummary(viewModel.starting.model))) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -134,7 +129,7 @@ fun ConversationListScreen(
                             onOpenChat(id)
                         }
                     },
-                ) { Text("开始") }
+                ) { Text(stringResource(R.string.start)) }
             },
             dismissButton = {
                 Row {
@@ -143,8 +138,8 @@ fun ConversationListScreen(
                             showCreate = false
                             showModels = true
                         },
-                    ) { Text("更换模型") }
-                    TextButton(onClick = { showCreate = false }) { Text("取消") }
+                    ) { Text(stringResource(R.string.change_model)) }
+                    TextButton(onClick = { showCreate = false }) { Text(stringResource(R.string.cancel)) }
                 }
             },
         )
@@ -152,7 +147,7 @@ fun ConversationListScreen(
 
     if (showModels) {
         ModelPickerDialog(
-            title = "选择模型",
+            title = stringResource(R.string.choose_model),
             providers = ProviderId.entries,
             selectedProvider = viewModel.starting.provider,
             selectedId = viewModel.starting.model,
@@ -170,18 +165,25 @@ fun ConversationListScreen(
     pendingDelete?.let { conversation ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
-            title = { Text("删除会话") },
-            text = { Text("删除「${conversation.title}」后，消息无法恢复。") },
+            title = { Text(stringResource(R.string.delete_conversation)) },
+            text = {
+                val title = if (isDefaultConversationTitle(conversation.title)) {
+                    stringResource(R.string.new_chat)
+                } else {
+                    conversation.title
+                }
+                Text(stringResource(R.string.delete_conversation_body, title))
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
                         viewModel.delete(conversation.id)
                         pendingDelete = null
                     },
-                ) { Text("删除") }
+                ) { Text(stringResource(R.string.delete)) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingDelete = null }) { Text("取消") }
+                TextButton(onClick = { pendingDelete = null }) { Text(stringResource(R.string.cancel)) }
             },
         )
     }
@@ -205,9 +207,13 @@ private fun ConversationCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(conversation.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    conversation.provider.modelSummary(conversation.model),
+                    if (isDefaultConversationTitle(conversation.title)) stringResource(R.string.new_chat) else conversation.title,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    conversation.provider.localizedSummary(conversation.model),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -223,7 +229,7 @@ private fun ConversationCard(
             IconButton(onClick = onDelete) {
                 Icon(
                     Icons.Filled.Delete,
-                    contentDescription = "删除会话",
+                    contentDescription = stringResource(R.string.delete_conversation),
                     tint = MaterialTheme.colorScheme.secondary,
                 )
             }
@@ -231,5 +237,9 @@ private fun ConversationCard(
     }
 }
 
-private fun formatTime(epoch: Long): String =
-    SimpleDateFormat("MM-dd HH:mm", Locale.CHINA).format(Date(epoch))
+@Composable
+private fun formatTime(epoch: Long): String {
+    val locale = LocalConfiguration.current.locales[0]
+    val pattern = if (locale.language == "zh") "MM-dd HH:mm" else "MMM d, HH:mm"
+    return SimpleDateFormat(pattern, locale).format(Date(epoch))
+}

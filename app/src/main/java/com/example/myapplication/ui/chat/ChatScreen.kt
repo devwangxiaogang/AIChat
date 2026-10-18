@@ -66,7 +66,10 @@ import androidx.core.content.ContextCompat
 import com.example.myapplication.domain.model.ChatMessage
 import com.example.myapplication.domain.model.MessageStatus
 import com.example.myapplication.domain.model.Role
-import com.example.myapplication.domain.model.modelSummary
+import androidx.compose.ui.res.stringResource
+import com.example.myapplication.R
+import com.example.myapplication.ui.isDefaultConversationTitle
+import com.example.myapplication.ui.localizedSummary
 import com.example.myapplication.ui.model.ModelPickerDialog
 import kotlinx.coroutines.launch
 
@@ -84,9 +87,9 @@ fun ChatScreen(
     val scope = rememberCoroutineScope()
     var showModels by remember { mutableStateOf(false) }
     var voicePhase by remember { mutableStateOf(VoicePhase.Idle) }
-    val speaker = remember { MessageSpeaker(context) }
     val speech = remember {
         SpeechInput(
+            context = context,
             onText = viewModel::updateInput,
             onPhase = { voicePhase = it },
             onError = { message -> scope.launch { snackbar.showSnackbar(message) } },
@@ -99,17 +102,22 @@ fun ChatScreen(
         if (granted) {
             speech.start(viewModel.state.value.input)
         } else {
-            scope.launch { snackbar.showSnackbar("需要麦克风权限才能语音输入") }
+            scope.launch { snackbar.showSnackbar(context.getString(R.string.mic_for_chat)) }
         }
     }
-    DisposableEffect(speech, speaker) {
-        onDispose {
-            speech.destroy()
-            speaker.shutdown()
-        }
+    DisposableEffect(speech) {
+        onDispose { speech.destroy() }
     }
     LaunchedEffect(Unit) {
         viewModel.errors.collect { snackbar.showSnackbar(it) }
+    }
+    LaunchedEffect(Unit) {
+        viewModel.speakPrompts.collect { prompt ->
+            val result = snackbar.showSnackbar(prompt.message, actionLabel = context.getString(R.string.use_local_once))
+            if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                viewModel.speakLocal(prompt.messageId, prompt.content)
+            }
+        }
     }
     val tail = state.messages.lastOrNull()
     LaunchedEffect(state.messages.size, tail?.content?.length, tail?.reasoning?.length) {
@@ -126,7 +134,9 @@ fun ChatScreen(
                 title = {
                     Column {
                         Text(
-                            state.conversation?.title ?: "对话",
+                            state.conversation?.title?.let { title ->
+                                if (isDefaultConversationTitle(title)) stringResource(R.string.new_chat) else title
+                            } ?: stringResource(R.string.chat_fallback),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -140,7 +150,7 @@ fun ChatScreen(
                                 color = MaterialTheme.colorScheme.primaryContainer,
                             ) {
                                 Text(
-                                    conversation.provider.modelSummary(conversation.model),
+                                    conversation.provider.localizedSummary(conversation.model),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                                     maxLines = 1,
@@ -153,12 +163,12 @@ fun ChatScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 },
                 actions = {
                     IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Filled.Settings, contentDescription = "设置")
+                        Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.section_settings))
                     }
                 },
             )
@@ -204,7 +214,9 @@ fun ChatScreen(
                     ) {
                         Icon(
                             if (voicePhase != VoicePhase.Idle) Icons.Filled.Stop else Icons.Filled.Mic,
-                            contentDescription = if (voicePhase != VoicePhase.Idle) "停止语音输入" else "语音输入",
+                            contentDescription = stringResource(
+                                if (voicePhase != VoicePhase.Idle) R.string.stop_voice else R.string.voice_input,
+                            ),
                             tint = if (listening) {
                                 MaterialTheme.colorScheme.primary
                             } else {
@@ -227,9 +239,9 @@ fun ChatScreen(
                                 if (state.input.isEmpty()) {
                                     Text(
                                         when (voicePhase) {
-                                            VoicePhase.Listening -> "正在听…"
-                                            VoicePhase.Recognizing -> "正在识别…"
-                                            VoicePhase.Idle -> "输入消息"
+                                            VoicePhase.Listening -> stringResource(R.string.listening_ellipsis)
+                                            VoicePhase.Recognizing -> stringResource(R.string.recognizing)
+                                            VoicePhase.Idle -> stringResource(R.string.input_hint)
                                         },
                                         style = MaterialTheme.typography.bodyLarge,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -250,7 +262,7 @@ fun ChatScreen(
                         }
                         state.generating -> {
                             IconButton(onClick = viewModel::stop) {
-                                Icon(Icons.Filled.Close, contentDescription = "停止生成")
+                                Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.stop_generation))
                             }
                         }
                         else -> {
@@ -259,7 +271,7 @@ fun ChatScreen(
                                 enabled = state.input.isNotBlank(),
                                 modifier = Modifier.padding(bottom = 4.dp, end = 4.dp),
                             ) {
-                                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送")
+                                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.send))
                             }
                         }
                     }
@@ -281,9 +293,9 @@ fun ChatScreen(
             items(state.messages.asReversed(), key = { it.id }) { message ->
                 MessageBubble(
                     message = message,
-                    speaking = speaker.speakingId == message.id,
+                    speaking = state.speakingId == message.id,
                     onRetry = viewModel::retry,
-                    onSpeak = { speaker.toggle(message.id, message.content) },
+                    onSpeak = { viewModel.toggleSpeak(message) },
                 )
             }
         }
@@ -292,11 +304,11 @@ fun ChatScreen(
     val conversation = state.conversation
     if (showModels && conversation != null) {
         ModelPickerDialog(
-            title = "更换${conversation.provider.displayName}模型",
+            title = stringResource(R.string.change_provider_model, stringResource(conversation.provider.nameRes)),
             providers = listOf(conversation.provider),
             selectedProvider = conversation.provider,
             selectedId = conversation.model,
-            note = "从下一条消息开始使用，已有消息会保留。换服务商请新建对话。",
+            note = stringResource(R.string.change_model_note),
             onSelect = { _, model ->
                 viewModel.selectModel(model)
                 showModels = false
@@ -348,7 +360,7 @@ private fun MessageBubble(
                     message.content.isNotBlank() && message.status == MessageStatus.STREAMING -> "${message.content}▍"
                     message.content.isNotBlank() -> message.content
                     message.status == MessageStatus.STREAMING -> "▍"
-                    else -> "（空回复）"
+                    else -> stringResource(R.string.empty_reply)
                 }
                 Text(body, style = MaterialTheme.typography.bodyLarge)
                 if (message.content.isNotBlank()) {
@@ -360,7 +372,7 @@ private fun MessageBubble(
                     ) {
                         Icon(
                             if (speaking) Icons.Filled.Stop else Icons.AutoMirrored.Filled.VolumeUp,
-                            contentDescription = if (speaking) "停止朗读" else "朗读消息",
+                            contentDescription = stringResource(if (speaking) R.string.stop_reading else R.string.read_message),
                             modifier = Modifier.size(16.dp),
                         )
                     }
@@ -376,7 +388,7 @@ private fun MessageBubble(
                     modifier = Modifier.padding(top = 4.dp),
                 )
             }
-            TextButton(onClick = onRetry) { Text("重试") }
+            TextButton(onClick = onRetry) { Text(stringResource(R.string.retry)) }
         }
     }
 }
@@ -386,7 +398,7 @@ private fun ReasoningBlock(reasoning: String) {
     var expanded by remember { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxWidth(0.78f).padding(bottom = 4.dp)) {
         TextButton(onClick = { expanded = !expanded }) {
-            Text(if (expanded) "收起思考" else "查看思考")
+            Text(stringResource(if (expanded) R.string.hide_reasoning else R.string.show_reasoning))
         }
         if (expanded) {
             Text(
