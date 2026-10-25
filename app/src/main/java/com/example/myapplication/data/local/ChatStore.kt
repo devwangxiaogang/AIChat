@@ -44,6 +44,29 @@ data class MessageEntity(
     val createdAt: Long,
 )
 
+@Entity(
+    tableName = "message_attachments",
+    foreignKeys = [
+        ForeignKey(
+            entity = MessageEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["messageId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index("messageId"), Index("conversationId")],
+)
+data class AttachmentEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val messageId: Long,
+    val conversationId: Long,
+    val localPath: String,
+    val mime: String,
+    val source: String,
+    val remoteUrl: String = "",
+    val sortOrder: Int = 0,
+)
+
 @Dao
 interface ConversationDao {
     @Query("SELECT * FROM conversations ORDER BY updatedAt DESC")
@@ -93,4 +116,25 @@ interface MessageDao {
             "WHERE id = :id",
     )
     suspend fun updateBody(id: Long, content: String, reasoning: String, status: String, error: String)
+}
+
+@Dao
+interface AttachmentDao {
+    @Query("SELECT * FROM message_attachments WHERE conversationId = :conversationId ORDER BY sortOrder ASC, id ASC")
+    fun observeForConversation(conversationId: Long): Flow<List<AttachmentEntity>>
+
+    @Query("SELECT * FROM message_attachments WHERE messageId = :messageId ORDER BY sortOrder ASC, id ASC")
+    suspend fun forMessage(messageId: Long): List<AttachmentEntity>
+
+    @Query("SELECT * FROM message_attachments WHERE conversationId = :conversationId")
+    suspend fun forConversation(conversationId: Long): List<AttachmentEntity>
+
+    @Insert
+    suspend fun insert(entity: AttachmentEntity): Long
+
+    @Insert
+    suspend fun insertAll(entities: List<AttachmentEntity>)
+
+    @Query("DELETE FROM message_attachments WHERE conversationId = :conversationId")
+    suspend fun deleteForConversation(conversationId: Long)
 }

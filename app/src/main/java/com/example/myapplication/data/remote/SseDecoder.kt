@@ -7,12 +7,18 @@ import kotlinx.serialization.json.Json
 sealed interface ChunkPiece {
     data class Delta(val text: String) : ChunkPiece
     data class Reasoning(val text: String) : ChunkPiece
+    data class ToolCallDelta(
+        val index: Int,
+        val id: String?,
+        val name: String?,
+        val arguments: String?,
+    ) : ChunkPiece
     data class Usage(val promptTokens: Int?, val completionTokens: Int?) : ChunkPiece
     data object Done : ChunkPiece
     data class Invalid(val message: String) : ChunkPiece
 }
 
-/** 解析 text/event-stream 的 data 行，兼容正文增量、思考内容和用量。 */
+/** 解析 text/event-stream 的 data 行，兼容正文增量、思考内容、工具调用和用量。 */
 object SseDecoder {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -35,6 +41,14 @@ object SseDecoder {
         if (!content.isNullOrEmpty()) pieces += ChunkPiece.Delta(content)
         val reasoning = delta?.reasoningContent
         if (!reasoning.isNullOrEmpty()) pieces += ChunkPiece.Reasoning(reasoning)
+        delta?.toolCalls.orEmpty().forEach { call ->
+            pieces += ChunkPiece.ToolCallDelta(
+                index = call.index,
+                id = call.id,
+                name = call.function?.name,
+                arguments = call.function?.arguments,
+            )
+        }
         chunk.usage?.let { usage ->
             pieces += ChunkPiece.Usage(usage.promptTokens, usage.completionTokens)
         }
@@ -59,6 +73,20 @@ data class ChoiceDto(
 data class DeltaDto(
     val content: String? = null,
     @SerialName("reasoning_content") val reasoningContent: String? = null,
+    @SerialName("tool_calls") val toolCalls: List<ToolCallDeltaDto> = emptyList(),
+)
+
+@Serializable
+data class ToolCallDeltaDto(
+    val index: Int = 0,
+    val id: String? = null,
+    val function: ToolFunctionDeltaDto? = null,
+)
+
+@Serializable
+data class ToolFunctionDeltaDto(
+    val name: String? = null,
+    val arguments: String? = null,
 )
 
 @Serializable
@@ -80,4 +108,5 @@ data class ApiErrorBody(
 @Serializable
 data class ApiErrorDetail(
     val message: String? = null,
+    val code: String? = null,
 )

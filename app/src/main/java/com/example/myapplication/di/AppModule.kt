@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.example.myapplication.data.local.AppDatabase
+import com.example.myapplication.data.local.AttachmentDao
 import com.example.myapplication.data.local.ConversationDao
 import com.example.myapplication.data.local.MessageDao
 import com.example.myapplication.data.local.TranslationDao
@@ -62,7 +63,8 @@ object AppModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "ai_chat.db")
-            // 表结构变化时直接重建本地库。翻译记录和会话都只存在这台设备上。
+            .addMigrations(com.example.myapplication.data.local.MIGRATION_2_3)
+            // 未覆盖的跨版本变更才重建，避免丢掉 2→3 的会话数据。
             .fallbackToDestructiveMigration(true)
             .build()
 
@@ -71,6 +73,9 @@ object AppModule {
 
     @Provides
     fun provideMessageDao(database: AppDatabase): MessageDao = database.messageDao()
+
+    @Provides
+    fun provideAttachmentDao(database: AppDatabase): AttachmentDao = database.attachmentDao()
 
     @Provides
     fun provideTranslationDao(database: AppDatabase): TranslationDao = database.translationDao()

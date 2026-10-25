@@ -59,6 +59,7 @@ fun ConversationListScreen(
     viewModel: ConversationListViewModel = hiltViewModel(),
 ) {
     val conversations by viewModel.conversations.collectAsStateWithLifecycle()
+    val catalogs by viewModel.catalogs.collectAsStateWithLifecycle()
     var showCreate by remember { mutableStateOf(false) }
     var showModels by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<Conversation?>(null) }
@@ -151,6 +152,7 @@ fun ConversationListScreen(
             providers = ProviderId.entries,
             selectedProvider = viewModel.starting.provider,
             selectedId = viewModel.starting.model,
+            catalogByProvider = catalogs,
             onSelect = { provider, model ->
                 showModels = false
                 scope.launch {

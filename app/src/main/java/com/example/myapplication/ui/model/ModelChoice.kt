@@ -2,7 +2,9 @@ package com.example.myapplication.ui.model
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,15 +28,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import com.example.myapplication.R
+import com.example.myapplication.domain.model.ModelChoice
 import com.example.myapplication.domain.model.ProviderId
-import com.example.myapplication.domain.model.groupedModels
+import com.example.myapplication.domain.model.modelChoices
 
 /**
  * 新建对话、设置和对话页共用的模型选择器。
- * 点目录项立即选中；「其他模型」展开后填写 ep- 接入点或目录外的 ID。
+ * 优先展示远程目录；没有时回退内置目录。「其他模型」可手填。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,11 +46,16 @@ fun ModelPickerDialog(
     providers: List<ProviderId>,
     selectedProvider: ProviderId,
     selectedId: String,
+    catalogByProvider: Map<ProviderId, List<ModelChoice>> = emptyMap(),
+    /** 对话选择器默认隐藏纯生图模型，避免误选 Seedream 当聊天模型。 */
+    includeImageGen: Boolean = false,
     note: String? = null,
     onSelect: (ProviderId, String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val known = providers.flatMap { it.models }.any { it.id == selectedId }
+    val known = providers.any { provider ->
+        catalogFor(provider, catalogByProvider, includeImageGen).any { it.id == selectedId }
+    }
     var customProvider by remember(selectedProvider) { mutableStateOf(selectedProvider) }
     var customOpen by remember(selectedId) { mutableStateOf(!known && selectedId.isNotBlank()) }
     var customId by remember(selectedId) { mutableStateOf(if (known) "" else selectedId) }
@@ -85,7 +93,8 @@ fun ModelPickerDialog(
                             modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
                         )
                     }
-                    provider.groupedModels().forEach { (group, options) ->
+                    val choices = catalogFor(provider, catalogByProvider, includeImageGen)
+                    choices.groupBy { it.groupRes }.forEach { (group, options) ->
                         Text(
                             stringResource(group),
                             style = MaterialTheme.typography.labelLarge,
@@ -96,6 +105,8 @@ fun ModelPickerDialog(
                             ModelRow(
                                 label = option.label,
                                 detail = option.id,
+                                vision = option.vision,
+                                imageGen = option.imageGen,
                                 selected = provider == selectedProvider && option.id == selectedId && !customOpen,
                                 onClick = { onSelect(provider, option.id) },
                             )
@@ -104,6 +115,8 @@ fun ModelPickerDialog(
                     ModelRow(
                         label = stringResource(R.string.other_model),
                         detail = stringResource(R.string.other_model_detail),
+                        vision = false,
+                        imageGen = false,
                         selected = customOpen && customProvider == provider,
                         onClick = {
                             customProvider = provider
@@ -134,10 +147,21 @@ fun ModelPickerDialog(
     }
 }
 
+private fun catalogFor(
+    provider: ProviderId,
+    catalogByProvider: Map<ProviderId, List<ModelChoice>>,
+    includeImageGen: Boolean,
+): List<ModelChoice> {
+    val base = catalogByProvider[provider]?.takeIf { it.isNotEmpty() } ?: provider.modelChoices()
+    return if (includeImageGen) base else base.filterNot { it.imageGen }
+}
+
 @Composable
 private fun ModelRow(
     label: String,
     detail: String,
+    vision: Boolean,
+    imageGen: Boolean,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
@@ -155,7 +179,23 @@ private fun ModelRow(
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            if (vision) {
+                Text(
+                    stringResource(R.string.capability_vision),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            if (imageGen) {
+                Text(
+                    stringResource(R.string.capability_draw),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
+        }
         Text(
             detail,
             style = MaterialTheme.typography.bodySmall,

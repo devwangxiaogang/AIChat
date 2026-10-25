@@ -1,11 +1,13 @@
 package com.example.myapplication.di
 
 import com.example.myapplication.data.ChatRepositoryImpl
+import com.example.myapplication.data.ModelCatalogRepositoryImpl
 import com.example.myapplication.data.SettingsRepositoryImpl
 import com.example.myapplication.data.remote.DeepSeekProvider
 import com.example.myapplication.data.remote.DoubaoProvider
 import com.example.myapplication.domain.ChatRepository
 import com.example.myapplication.domain.LlmProvider
+import com.example.myapplication.domain.ModelCatalogRepository
 import com.example.myapplication.domain.SettingsRepository
 import com.example.myapplication.domain.model.ProviderId
 import dagger.Binds
@@ -26,6 +28,10 @@ abstract class BindingModule {
     @Binds
     @Singleton
     abstract fun bindSettingsRepository(impl: SettingsRepositoryImpl): SettingsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindModelCatalogRepository(impl: ModelCatalogRepositoryImpl): ModelCatalogRepository
 
     @Binds
     @IntoMap

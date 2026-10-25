@@ -3,6 +3,7 @@ package com.example.myapplication.data.remote
 import android.content.Context
 import com.example.myapplication.R
 import com.example.myapplication.domain.model.StreamEvent
+import com.example.myapplication.domain.model.ToolCallRequest
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -36,7 +37,6 @@ class OpenAiCompatibleClient @Inject constructor(
             .post(body.toString().toRequestBody(JSON_MEDIA))
             .build()
         val call = http.newCall(request)
-        // 用户停止生成时取消正在进行的 HTTP 调用，避免继续占用连接。
         currentCoroutineContext().job.invokeOnCompletion { cause ->
             if (cause != null) call.cancel()
         }
@@ -59,27 +59,36 @@ class OpenAiCompatibleClient @Inject constructor(
                 val source = payload.source()
                 var promptTokens: Int? = null
                 var completionTokens: Int? = null
+                val toolBuf = sortedMapOf<Int, ToolCallBuffer>()
                 while (currentCoroutineContext().isActive && !source.exhausted()) {
                     val line = source.readUtf8Line() ?: break
                     for (piece in SseDecoder.decode(line)) {
                         when (piece) {
                             is ChunkPiece.Delta -> emit(StreamEvent.Delta(piece.text))
                             is ChunkPiece.Reasoning -> emit(StreamEvent.Reasoning(piece.text))
+                            is ChunkPiece.ToolCallDelta -> {
+                                val buf = toolBuf.getOrPut(piece.index) { ToolCallBuffer() }
+                                if (!piece.id.isNullOrBlank()) buf.id = piece.id
+                                if (!piece.name.isNullOrBlank()) buf.name = piece.name
+                                if (!piece.arguments.isNullOrEmpty()) buf.arguments += piece.arguments
+                            }
                             is ChunkPiece.Usage -> {
                                 promptTokens = piece.promptTokens ?: promptTokens
                                 completionTokens = piece.completionTokens ?: completionTokens
                             }
                             ChunkPiece.Done -> {
+                                emitTools(toolBuf)
                                 emit(StreamEvent.Completed(promptTokens, completionTokens))
                                 return@flow
                             }
                             is ChunkPiece.Invalid -> {
-                                emit(StreamEvent.Failed(piece.message.ifBlank { context.getString(R.string.parse_model_failed) }))
+                                emit(StreamEvent.Failed(friendlyError(piece.message)))
                                 return@flow
                             }
                         }
                     }
                 }
+                emitTools(toolBuf)
                 emit(StreamEvent.Completed(promptTokens, completionTokens))
             }
         } catch (cancelled: CancellationException) {
@@ -91,6 +100,20 @@ class OpenAiCompatibleClient @Inject constructor(
             emit(StreamEvent.Failed(error.message?.takeIf { it.isNotBlank() } ?: context.getString(R.string.network_failed)))
         }
     }.flowOn(Dispatchers.IO)
+
+    private suspend fun kotlinx.coroutines.flow.FlowCollector<StreamEvent>.emitTools(
+        toolBuf: Map<Int, ToolCallBuffer>,
+    ) {
+        val calls = toolBuf.values.mapNotNull { buf ->
+            val name = buf.name?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            ToolCallRequest(
+                id = buf.id.orEmpty(),
+                name = name,
+                argumentsJson = buf.arguments,
+            )
+        }
+        if (calls.isNotEmpty()) emit(StreamEvent.ToolCalls(calls))
+    }
 
     private suspend fun kotlinx.coroutines.flow.FlowCollector<StreamEvent>.emitNonStream(raw: String) {
         val text = runCatching {
@@ -105,11 +128,38 @@ class OpenAiCompatibleClient @Inject constructor(
     }
 
     private fun errorMessage(code: Int, raw: String): String {
-        val parsed = runCatching {
-            json.decodeFromString<ApiErrorBody>(raw).error?.message
+        val detail = runCatching {
+            json.decodeFromString<ApiErrorBody>(raw).error
         }.getOrNull()
+        val parsed = detail?.message
+        val codeName = detail?.code.orEmpty()
+        if (isMissingModel(code, codeName, parsed.orEmpty())) {
+            return context.getString(R.string.model_not_available)
+        }
         return parsed?.takeIf { it.isNotBlank() } ?: context.getString(R.string.request_failed_code, code)
     }
+
+    private fun friendlyError(message: String): String {
+        if (isMissingModel(404, "", message)) {
+            return context.getString(R.string.model_not_available)
+        }
+        return message.ifBlank { context.getString(R.string.parse_model_failed) }
+    }
+
+    private fun isMissingModel(httpCode: Int, apiCode: String, message: String): Boolean {
+        val blob = "$apiCode $message".lowercase()
+        return httpCode == 404 ||
+            blob.contains("invalidendpointormodel") ||
+            blob.contains("model not found") ||
+            blob.contains("does not exist") ||
+            blob.contains("notfound")
+    }
+
+    private data class ToolCallBuffer(
+        var id: String? = null,
+        var name: String? = null,
+        var arguments: String = "",
+    )
 
     private companion object {
         val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()

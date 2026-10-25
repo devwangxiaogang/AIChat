@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -45,6 +46,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.myapplication.domain.model.ModelChoice
 import com.example.myapplication.domain.model.ProviderConfig
 import com.example.myapplication.domain.model.ProviderId
 import com.example.myapplication.domain.model.SpeechPreferences
@@ -83,6 +86,7 @@ fun SettingsScreen(
         if (configs == null) {
             CircularProgressIndicator(modifier = Modifier.padding(padding).padding(24.dp))
         } else {
+            val catalogs by viewModel.catalogs.collectAsStateWithLifecycle()
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -97,10 +101,42 @@ fun SettingsScreen(
                     stringResource(R.string.settings_intro),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(stringResource(R.string.refresh_models), style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            stringResource(R.string.refresh_models_note),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Button(
+                            onClick = viewModel::refreshModels,
+                            enabled = !viewModel.refreshing,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            if (viewModel.refreshing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier
+                                        .padding(end = 8.dp)
+                                        .size(18.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                            }
+                            Text(stringResource(R.string.refresh_models))
+                        }
+                    }
+                }
                 configs.values.forEach { config ->
                     ProviderForm(
                         config = config,
                         speech = viewModel.speech,
+                        catalog = catalogs[config.provider].orEmpty(),
                         onChange = viewModel::update,
                         onEngine = viewModel::setEngine,
                         onSpeaker = viewModel::setSpeaker,
@@ -117,6 +153,7 @@ fun SettingsScreen(
 private fun ProviderForm(
     config: ProviderConfig,
     speech: SpeechPreferences,
+    catalog: List<ModelChoice>,
     onChange: (ProviderConfig) -> Unit,
     onEngine: (TtsEngine) -> Unit,
     onSpeaker: (VoiceChoice) -> Unit,
@@ -212,6 +249,7 @@ private fun ProviderForm(
             providers = listOf(config.provider),
             selectedProvider = config.provider,
             selectedId = config.model,
+            catalogByProvider = mapOf(config.provider to catalog),
             note = stringResource(R.string.default_model_note),
             onSelect = { _, model ->
                 onChange(config.copy(model = model))

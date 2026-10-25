@@ -1,36 +1,51 @@
 package com.example.myapplication.data
 
 import android.content.Context
+import android.net.Uri
 import android.os.SystemClock
 import com.example.myapplication.R
-import com.example.myapplication.ui.isDefaultConversationTitle
-import dagger.hilt.android.qualifiers.ApplicationContext
+import com.example.myapplication.data.local.AttachmentDao
+import com.example.myapplication.data.local.AttachmentEntity
+import com.example.myapplication.data.local.ChatMediaStore
 import com.example.myapplication.data.local.ConversationDao
 import com.example.myapplication.data.local.ConversationEntity
 import com.example.myapplication.data.local.MessageDao
 import com.example.myapplication.data.local.MessageEntity
+import com.example.myapplication.data.remote.DoubaoProvider
+import com.example.myapplication.data.remote.SeedreamClient
 import com.example.myapplication.di.AppScope
 import com.example.myapplication.domain.ChatRepository
 import com.example.myapplication.domain.LlmProvider
+import com.example.myapplication.domain.ModelCatalogRepository
 import com.example.myapplication.domain.SettingsRepository
+import com.example.myapplication.domain.model.AttachmentSource
 import com.example.myapplication.domain.model.ChatMessage
 import com.example.myapplication.domain.model.ChatRequest
 import com.example.myapplication.domain.model.Conversation
+import com.example.myapplication.domain.model.MessageAttachment
 import com.example.myapplication.domain.model.MessageStatus
 import com.example.myapplication.domain.model.ProviderConfig
 import com.example.myapplication.domain.model.ProviderId
 import com.example.myapplication.domain.model.Role
 import com.example.myapplication.domain.model.StreamEvent
+import com.example.myapplication.domain.model.ToolCallRequest
 import com.example.myapplication.domain.model.WireMessage
+import com.example.myapplication.ui.isDefaultConversationTitle
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -40,8 +55,13 @@ class ChatRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val conversationDao: ConversationDao,
     private val messageDao: MessageDao,
+    private val attachmentDao: AttachmentDao,
+    private val mediaStore: ChatMediaStore,
+    private val seedreamClient: SeedreamClient,
+    private val modelCatalog: ModelCatalogRepository,
     private val providers: Map<ProviderId, @JvmSuppressWildcards LlmProvider>,
     private val settingsRepository: SettingsRepository,
+    private val json: Json,
     @AppScope private val appScope: CoroutineScope,
 ) : ChatRepository {
     private val jobs = ConcurrentHashMap<Long, Job>()
@@ -54,12 +74,19 @@ class ChatRepositoryImpl @Inject constructor(
         conversationDao.observe(id).map { row -> row?.toDomain() }
 
     override fun observeMessages(conversationId: Long): Flow<List<ChatMessage>> =
-        messageDao.observe(conversationId).map { rows -> rows.map { it.toDomain() } }
+        combine(
+            messageDao.observe(conversationId),
+            attachmentDao.observeForConversation(conversationId),
+        ) { messages, attachments ->
+            val byMessage = attachments.groupBy { it.messageId }
+            messages.map { row ->
+                row.toDomain(byMessage[row.id].orEmpty().map { it.toDomain() })
+            }
+        }
 
     override fun isGenerating(conversationId: Long): Flow<Boolean> =
         activeIds.map { conversationId in it }.distinctUntilChanged()
 
-    /** 模型在创建时写入会话，之后发送不会用设置里的默认模型覆盖它。 */
     override suspend fun createConversation(provider: ProviderId, model: String): Long {
         val config = settingsRepository.get(provider)
         val chosen = model.trim().ifBlank { config.model.ifBlank { provider.defaultModel } }
@@ -77,7 +104,6 @@ class ChatRepositoryImpl @Inject constructor(
     override suspend fun updateModel(conversationId: Long, model: String): String? {
         val chosen = model.trim()
         if (chosen.isEmpty()) return context.getString(R.string.choose_model_error)
-        // 生成过程中换模型会导致同一次回复的上下文和计费模型不一致。
         if (jobs[conversationId]?.isActive == true) return context.getString(R.string.generating)
         val conversation = conversationDao.get(conversationId) ?: return context.getString(R.string.conversation_missing)
         conversationDao.update(
@@ -86,40 +112,110 @@ class ChatRepositoryImpl @Inject constructor(
         return null
     }
 
-    override suspend fun deleteConversation(id: Long) {
-        jobs[id]?.cancel()
-        conversationDao.delete(id)
+    override suspend fun updateSystemPrompt(conversationId: Long, prompt: String): String? {
+        if (jobs[conversationId]?.isActive == true) return context.getString(R.string.generating)
+        val conversation = conversationDao.get(conversationId) ?: return context.getString(R.string.conversation_missing)
+        conversationDao.update(
+            conversation.copy(
+                systemPrompt = prompt.trim().ifBlank { context.getString(R.string.assistant_prompt) },
+                updatedAt = System.currentTimeMillis(),
+            ),
+        )
+        return null
     }
 
-    override suspend fun send(conversationId: Long, text: String): String? {
+    override suspend fun deleteConversation(id: Long) {
+        jobs[id]?.cancel()
+        val paths = attachmentDao.forConversation(id).map { it.localPath }
+        conversationDao.delete(id)
+        mediaStore.deletePaths(paths)
+    }
+
+    override suspend fun send(
+        conversationId: Long,
+        text: String,
+        imageUris: List<Uri>,
+        drawMode: Boolean,
+    ): String? {
         val trimmed = text.trim()
-        if (trimmed.isEmpty()) return context.getString(R.string.enter_message)
+        if (trimmed.isEmpty() && imageUris.isEmpty()) return context.getString(R.string.enter_message)
+        if (jobs[conversationId]?.isActive == true) return context.getString(R.string.generating)
+        if (imageUris.size > ChatMediaStore.MAX_ATTACHMENTS) {
+            return context.getString(R.string.too_many_images, ChatMediaStore.MAX_ATTACHMENTS)
+        }
         val prepared = prepare(conversationId) ?: return context.getString(R.string.conversation_missing)
         val (conversation, provider, config) = prepared
-        val rejected = rejectIfBusyOrMissingKey(conversationId, provider, config)
-        if (rejected != null) return rejected
+        val shouldDraw = drawMode || looksLikeDrawIntent(trimmed)
+        if (shouldDraw) {
+            val doubao = settingsRepository.get(ProviderId.DOUBAO)
+            if (doubao.apiKey.isBlank()) return context.getString(R.string.need_doubao_for_draw)
+        } else {
+            val rejected = rejectIfBusyOrMissingKey(conversationId, provider, config)
+            if (rejected != null) return rejected
+            if (imageUris.isNotEmpty() &&
+                !modelCatalog.supportsVision(provider, conversation.model.ifBlank { config.model })
+            ) {
+                return context.getString(R.string.model_no_vision)
+            }
+        }
+        val imported = imageUris.mapNotNull { mediaStore.importUserImage(it) }
+        if (imageUris.isNotEmpty() && imported.isEmpty()) {
+            return context.getString(R.string.image_import_failed)
+        }
         if (!start(conversation.id) {
-                generate(conversation, provider, config, newUserText = trimmed)
+                if (shouldDraw) {
+                    generateImage(
+                        conversation = conversation,
+                        prompt = trimmed.ifBlank { context.getString(R.string.draw_default_prompt) },
+                        imported = imported,
+                        insertUser = true,
+                    )
+                } else {
+                    generate(conversation, provider, config, trimmed, imported)
+                }
             }
         ) {
+            mediaStore.deletePaths(imported.map { it.path })
             return context.getString(R.string.generating)
         }
         return null
     }
 
     override suspend fun retry(conversationId: Long): String? {
+        if (jobs[conversationId]?.isActive == true) return context.getString(R.string.generating)
         val prepared = prepare(conversationId) ?: return context.getString(R.string.conversation_missing)
         val (conversation, provider, config) = prepared
-        val rejected = rejectIfBusyOrMissingKey(conversationId, provider, config)
-        if (rejected != null) return rejected
         val last = messageDao.latest(conversationId) ?: return context.getString(R.string.nothing_to_retry)
-        if (last.role == Role.ASSISTANT.name && last.status == MessageStatus.FAILED.name) {
-            messageDao.delete(last.id)
+        if (last.role != Role.ASSISTANT.name || last.status != MessageStatus.FAILED.name) {
+            return context.getString(R.string.nothing_to_retry)
         }
-        val hasUser = messageDao.doneMessages(conversationId).any { it.role == Role.USER.name }
-        if (!hasUser) return context.getString(R.string.nothing_to_retry)
+        val drawRetry = last.error.startsWith(DRAW_ERROR_PREFIX)
+        if (drawRetry) {
+            val doubao = settingsRepository.get(ProviderId.DOUBAO)
+            if (doubao.apiKey.isBlank()) return context.getString(R.string.need_doubao_for_draw)
+        } else {
+            val rejected = rejectIfBusyOrMissingKey(conversationId, provider, config)
+            if (rejected != null) return rejected
+        }
+        val paths = attachmentDao.forMessage(last.id).map { it.localPath }
+        messageDao.delete(last.id)
+        mediaStore.deletePaths(paths)
+        val user = messageDao.doneMessages(conversationId).lastOrNull { it.role == Role.USER.name }
+            ?: return context.getString(R.string.nothing_to_retry)
         if (!start(conversation.id) {
-                generate(conversation, provider, config, newUserText = null)
+                if (drawRetry) {
+                    val refs = attachmentDao.forMessage(user.id)
+                        .filter { it.source == AttachmentSource.USER.name }
+                        .map { ChatMediaStore.ImportedImage(it.localPath, it.mime) }
+                    generateImage(
+                        conversation = conversation,
+                        prompt = user.content.ifBlank { context.getString(R.string.draw_default_prompt) },
+                        imported = refs,
+                        insertUser = false,
+                    )
+                } else {
+                    generate(conversation, provider, config, newUserText = null, imported = emptyList())
+                }
             }
         ) {
             return context.getString(R.string.generating)
@@ -178,6 +274,7 @@ class ChatRepositoryImpl @Inject constructor(
         provider: ProviderId,
         config: ProviderConfig,
         newUserText: String?,
+        imported: List<ChatMediaStore.ImportedImage>,
     ) {
         var assistantId = 0L
         var content = ""
@@ -185,25 +282,41 @@ class ChatRepositoryImpl @Inject constructor(
         var terminal = false
         try {
             val now = System.currentTimeMillis()
-            if (newUserText != null) {
-                messageDao.insert(
+            val userText = newUserText.orEmpty()
+            if (newUserText != null || imported.isNotEmpty()) {
+                val userId = messageDao.insert(
                     MessageEntity(
                         conversationId = conversation.id,
                         role = Role.USER.name,
-                        content = newUserText,
+                        content = userText,
                         status = MessageStatus.DONE.name,
                         createdAt = now,
                     ),
                 )
+                if (imported.isNotEmpty()) {
+                    attachmentDao.insertAll(
+                        imported.mapIndexed { index, image ->
+                            AttachmentEntity(
+                                messageId = userId,
+                                conversationId = conversation.id,
+                                localPath = image.path,
+                                mime = image.mime,
+                                source = AttachmentSource.USER.name,
+                                sortOrder = index,
+                            )
+                        },
+                    )
+                }
             }
-            // 以会话自己的模型为准，设置页只影响还没有成功发送记录时的新对话。
             val model = conversation.model.ifBlank {
                 config.model.ifBlank { provider.defaultModel }
             }
             conversationDao.update(
                 conversation.copy(
-                    title = if (newUserText != null && isDefaultConversationTitle(conversation.title)) {
-                        newUserText.take(24)
+                    title = if ((newUserText != null || imported.isNotEmpty()) &&
+                        isDefaultConversationTitle(conversation.title)
+                    ) {
+                        userText.take(24).ifBlank { context.getString(R.string.image_message_title) }
                     } else {
                         conversation.title
                     },
@@ -220,21 +333,17 @@ class ChatRepositoryImpl @Inject constructor(
                     createdAt = System.currentTimeMillis(),
                 ),
             )
-            val history = messageDao.doneMessages(conversation.id).takeLast(CONTEXT_LIMIT)
-            val messages = buildList {
-                if (conversation.systemPrompt.isNotBlank()) {
-                    add(WireMessage(Role.SYSTEM, conversation.systemPrompt))
-                }
-                history.forEach { row ->
-                    add(WireMessage(Role.valueOf(row.role), row.content))
-                }
-            }
-            val llm = providers[provider] ?: error(context.getString(R.string.provider_missing, context.getString(provider.nameRes)))
+            val messages = buildWireHistory(conversation)
+            val doubaoKeyReady = settingsRepository.get(ProviderId.DOUBAO).apiKey.isNotBlank()
+            val enableTool = provider == ProviderId.DOUBAO && doubaoKeyReady
+            val llm = providers[provider]
+                ?: error(context.getString(R.string.provider_missing, context.getString(provider.nameRes)))
             var lastFlush = 0L
+            var pendingTools: List<ToolCallRequest> = emptyList()
             llm.stream(
                 apiKey = config.apiKey,
                 baseUrl = config.baseUrl,
-                request = ChatRequest(model = model, messages = messages),
+                request = ChatRequest(model = model, messages = messages, enableImageTool = enableTool),
             ).collect { event ->
                 when (event) {
                     is StreamEvent.Delta -> {
@@ -245,8 +354,13 @@ class ChatRepositoryImpl @Inject constructor(
                         reasoning += event.text
                         lastFlush = flush(assistantId, content, reasoning, lastFlush, force = false)
                     }
+                    is StreamEvent.ToolCalls -> pendingTools = event.calls
                     is StreamEvent.Completed -> {
-                        messageDao.updateBody(assistantId, content, reasoning, MessageStatus.DONE.name, "")
+                        if (pendingTools.isNotEmpty()) {
+                            handleImageTools(assistantId, conversation, pendingTools, content)
+                        } else {
+                            messageDao.updateBody(assistantId, content, reasoning, MessageStatus.DONE.name, "")
+                        }
                         settingsRepository.rememberRecent(provider, model)
                         terminal = true
                     }
@@ -263,7 +377,11 @@ class ChatRepositoryImpl @Inject constructor(
                 }
             }
             if (!terminal) {
-                messageDao.updateBody(assistantId, content, reasoning, MessageStatus.DONE.name, "")
+                if (pendingTools.isNotEmpty()) {
+                    handleImageTools(assistantId, conversation, pendingTools, content)
+                } else {
+                    messageDao.updateBody(assistantId, content, reasoning, MessageStatus.DONE.name, "")
+                }
                 settingsRepository.rememberRecent(provider, model)
                 terminal = true
             }
@@ -281,6 +399,197 @@ class ChatRepositoryImpl @Inject constructor(
                 )
             }
         }
+    }
+
+    private suspend fun handleImageTools(
+        assistantId: Long,
+        conversation: ConversationEntity,
+        calls: List<ToolCallRequest>,
+        priorContent: String,
+    ) {
+        val drawCall = calls.firstOrNull {
+            it.name.equals(DoubaoProvider.GENERATE_IMAGE_TOOL, ignoreCase = true)
+        }
+        if (drawCall == null) {
+            messageDao.updateBody(assistantId, priorContent, "", MessageStatus.DONE.name, "")
+            return
+        }
+        val prompt = parseToolPrompt(drawCall.argumentsJson)
+            ?: priorContent.takeIf { it.isNotBlank() }
+            ?: context.getString(R.string.draw_default_prompt)
+        messageDao.updateBody(
+            assistantId,
+            context.getString(R.string.drawing_in_progress),
+            "",
+            MessageStatus.STREAMING.name,
+            "",
+        )
+        try {
+            attachGeneratedImage(assistantId, conversation, prompt, emptyList())
+            val caption = priorContent.ifBlank { context.getString(R.string.draw_done_seedream) }
+            messageDao.updateBody(assistantId, caption, "", MessageStatus.DONE.name, "")
+        } catch (error: Exception) {
+            messageDao.updateBody(
+                assistantId,
+                priorContent,
+                "",
+                MessageStatus.FAILED.name,
+                DRAW_ERROR_PREFIX + (error.message ?: context.getString(R.string.image_gen_failed)),
+            )
+        }
+    }
+
+    private suspend fun generateImage(
+        conversation: ConversationEntity,
+        prompt: String,
+        imported: List<ChatMediaStore.ImportedImage>,
+        insertUser: Boolean,
+    ) {
+        var assistantId = 0L
+        var terminal = false
+        try {
+            val now = System.currentTimeMillis()
+            if (insertUser) {
+                val userId = messageDao.insert(
+                    MessageEntity(
+                        conversationId = conversation.id,
+                        role = Role.USER.name,
+                        content = prompt,
+                        status = MessageStatus.DONE.name,
+                        createdAt = now,
+                    ),
+                )
+                if (imported.isNotEmpty()) {
+                    attachmentDao.insertAll(
+                        imported.mapIndexed { index, image ->
+                            AttachmentEntity(
+                                messageId = userId,
+                                conversationId = conversation.id,
+                                localPath = image.path,
+                                mime = image.mime,
+                                source = AttachmentSource.USER.name,
+                                sortOrder = index,
+                            )
+                        },
+                    )
+                }
+                conversationDao.update(
+                    conversation.copy(
+                        title = if (isDefaultConversationTitle(conversation.title)) {
+                            prompt.take(24).ifBlank { context.getString(R.string.draw_message_title) }
+                        } else {
+                            conversation.title
+                        },
+                        updatedAt = now,
+                    ),
+                )
+            }
+            assistantId = messageDao.insert(
+                MessageEntity(
+                    conversationId = conversation.id,
+                    role = Role.ASSISTANT.name,
+                    content = context.getString(R.string.drawing_in_progress),
+                    status = MessageStatus.STREAMING.name,
+                    createdAt = System.currentTimeMillis(),
+                ),
+            )
+            attachGeneratedImage(assistantId, conversation, prompt, imported)
+            messageDao.updateBody(
+                assistantId,
+                context.getString(R.string.draw_done_seedream),
+                "",
+                MessageStatus.DONE.name,
+                "",
+            )
+            terminal = true
+        } catch (cancelled: CancellationException) {
+            if (assistantId != 0L && !terminal) {
+                messageDao.delete(assistantId)
+            }
+            throw cancelled
+        } catch (error: Exception) {
+            if (assistantId != 0L && !terminal) {
+                messageDao.updateBody(
+                    assistantId,
+                    context.getString(R.string.drawing_in_progress),
+                    "",
+                    MessageStatus.FAILED.name,
+                    DRAW_ERROR_PREFIX + (error.message ?: context.getString(R.string.image_gen_failed)),
+                )
+            }
+        }
+    }
+
+    private suspend fun attachGeneratedImage(
+        assistantId: Long,
+        conversation: ConversationEntity,
+        prompt: String,
+        imported: List<ChatMediaStore.ImportedImage>,
+    ) {
+        val doubao = settingsRepository.get(ProviderId.DOUBAO)
+        val refs = imported.mapNotNull { mediaStore.toDataUrl(it.path, it.mime) }
+        val result = seedreamClient.generate(
+            apiKey = doubao.apiKey,
+            baseUrl = doubao.baseUrl,
+            model = modelCatalog.preferredImageGenModel(),
+            prompt = prompt,
+            referenceDataUrls = refs,
+        )
+        val bytes = result.bytes ?: error(context.getString(R.string.image_gen_empty))
+        val path = mediaStore.saveGenerated(bytes, result.mime)
+        attachmentDao.insert(
+            AttachmentEntity(
+                messageId = assistantId,
+                conversationId = conversation.id,
+                localPath = path,
+                mime = result.mime,
+                source = AttachmentSource.GENERATED.name,
+                remoteUrl = result.url.orEmpty(),
+                sortOrder = 0,
+            ),
+        )
+    }
+
+    private suspend fun buildWireHistory(conversation: ConversationEntity): List<WireMessage> {
+        val history = messageDao.doneMessages(conversation.id).takeLast(CONTEXT_LIMIT)
+        val imageBudget = IMAGE_HISTORY_LIMIT
+        var imagesLeft = imageBudget
+        val chronologic = buildList {
+            if (conversation.systemPrompt.isNotBlank()) {
+                add(WireMessage(Role.SYSTEM, conversation.systemPrompt))
+            }
+            // 从旧到新：只给最近若干条用户附图带上 base64，更早的只留文字。
+            val withImagesFromEnd = history.asReversed().map { row ->
+                val role = Role.valueOf(row.role)
+                val attachments = if (role == Role.USER && imagesLeft > 0) {
+                    attachmentDao.forMessage(row.id)
+                        .filter { it.source == AttachmentSource.USER.name }
+                        .take(imagesLeft)
+                } else {
+                    emptyList()
+                }
+                imagesLeft -= attachments.size
+                val dataUrls = attachments.mapNotNull { att ->
+                    mediaStore.toDataUrl(att.localPath, att.mime)
+                }
+                WireMessage(role, row.content, dataUrls)
+            }.asReversed()
+            addAll(withImagesFromEnd)
+        }
+        return chronologic
+    }
+
+    private fun parseToolPrompt(argumentsJson: String): String? {
+        if (argumentsJson.isBlank()) return null
+        return runCatching {
+            json.parseToJsonElement(argumentsJson).jsonObject["prompt"]?.jsonPrimitive?.contentOrNull
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+    }
+
+    private fun looksLikeDrawIntent(text: String): Boolean {
+        if (text.isBlank()) return false
+        val lower = text.lowercase()
+        return DRAW_PATTERNS.any { it.containsMatchIn(lower) || it.containsMatchIn(text) }
     }
 
     private suspend fun finishCancelled(
@@ -315,22 +624,45 @@ class ChatRepositoryImpl @Inject constructor(
         title = title,
         provider = ProviderId.valueOf(provider),
         model = model,
+        systemPrompt = systemPrompt,
         updatedAt = updatedAt,
     )
 
-    private fun MessageEntity.toDomain(): ChatMessage = ChatMessage(
+    private fun MessageEntity.toDomain(attachments: List<MessageAttachment> = emptyList()): ChatMessage =
+        ChatMessage(
+            id = id,
+            conversationId = conversationId,
+            role = Role.valueOf(role),
+            content = content,
+            reasoning = reasoning,
+            status = MessageStatus.valueOf(status),
+            error = error.removePrefix(DRAW_ERROR_PREFIX),
+            createdAt = createdAt,
+            attachments = attachments,
+        )
+
+    private fun AttachmentEntity.toDomain(): MessageAttachment = MessageAttachment(
         id = id,
-        conversationId = conversationId,
-        role = Role.valueOf(role),
-        content = content,
-        reasoning = reasoning,
-        status = MessageStatus.valueOf(status),
-        error = error,
-        createdAt = createdAt,
+        messageId = messageId,
+        localPath = localPath,
+        mime = mime,
+        source = runCatching { AttachmentSource.valueOf(source) }.getOrDefault(AttachmentSource.USER),
+        remoteUrl = remoteUrl,
+        sortOrder = sortOrder,
     )
 
-    private companion object {
-        const val CONTEXT_LIMIT = 20
-        const val FLUSH_INTERVAL_MS = 100L
+    companion object {
+        const val DRAW_ERROR_PREFIX = "__draw__:"
+        private const val CONTEXT_LIMIT = 20
+        private const val IMAGE_HISTORY_LIMIT = 4
+        private const val FLUSH_INTERVAL_MS = 100L
+        private val DRAW_PATTERNS = listOf(
+            Regex("""画(一)?(张|个|幅)"""),
+            Regex("""帮我画"""),
+            Regex("""请画"""),
+            Regex("""生成(一)?(张|幅)?(图|图片|插画|海报|图像)"""),
+            Regex("""\b(draw|paint)\b.+\b(image|picture|illustration)\b""", RegexOption.IGNORE_CASE),
+            Regex("""\b(generate|create)\b.+\b(image|picture)\b""", RegexOption.IGNORE_CASE),
+        )
     }
 }

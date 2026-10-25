@@ -1,5 +1,6 @@
 package com.example.myapplication.domain
 
+import android.net.Uri
 import com.example.myapplication.domain.model.ChatMessage
 import com.example.myapplication.domain.model.Conversation
 import com.example.myapplication.domain.model.ProviderId
@@ -18,10 +19,17 @@ interface ChatRepository {
 
     suspend fun updateModel(conversationId: Long, model: String): String?
 
+    suspend fun updateSystemPrompt(conversationId: Long, prompt: String): String?
+
     suspend fun deleteConversation(id: Long)
 
     /** 返回 null 表示已开始生成，否则是需要展示给用户的原因。 */
-    suspend fun send(conversationId: Long, text: String): String?
+    suspend fun send(
+        conversationId: Long,
+        text: String,
+        imageUris: List<Uri> = emptyList(),
+        drawMode: Boolean = false,
+    ): String?
 
     suspend fun retry(conversationId: Long): String?
 
