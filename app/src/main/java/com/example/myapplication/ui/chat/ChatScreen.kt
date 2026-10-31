@@ -12,6 +12,13 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -56,6 +63,7 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AssistChip
@@ -135,6 +143,7 @@ fun ChatScreen(
     val copyLabel = stringResource(R.string.copy_message)
     var showModels by remember { mutableStateOf(false) }
     var showPersona by remember { mutableStateOf(false) }
+    var showMore by remember { mutableStateOf(false) }
     var previewPath by remember { mutableStateOf<String?>(null) }
     var voiceMode by remember { mutableStateOf(false) }
     var voicePhase by remember { mutableStateOf(VoicePhase.Idle) }
@@ -191,8 +200,6 @@ fun ChatScreen(
         val grew = state.messages.size > previousCount
         previousCount = state.messages.size
         if (state.messages.isEmpty()) return@LaunchedEffect
-        // 新增消息（尤其是自己刚发的）总是跳到最新；只有同一段流式输出增长时，
-        // 才在用户已经停在底部的情况下跟随，避免上滑看历史被拽走。
         if (grew || !listState.canScrollBackward) {
             listState.animateScrollToItem(0)
         }
@@ -203,121 +210,167 @@ fun ChatScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
+                    }
+                },
                 title = {
                     Column {
                         val headerTitle = state.conversation?.title
                         Text(
                             headerTitle?.takeIf { it.isNotBlank() }
                                 ?: stringResource(if (headerTitle == null) R.string.chat_fallback else R.string.new_chat),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                         val conversation = state.conversation
                         if (conversation != null) {
-                            Surface(
+                            Row(
                                 modifier = Modifier
                                     .padding(top = 2.dp)
-                                    .clickable { showModels = true },
-                                shape = RoundedCornerShape(50),
-                                color = MaterialTheme.colorScheme.primaryContainer,
+                                    .clip(RoundedCornerShape(50))
+                                    .clickable { showModels = true }
+                                    .padding(horizontal = 8.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Text(
                                     conversation.provider.localizedSummary(conversation.model),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                                )
+                                Icon(
+                                    Icons.Filled.KeyboardArrowDown,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(15.dp),
                                 )
                             }
                         }
                     }
                 },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
-                    }
-                },
                 actions = {
-                    IconButton(onClick = { showPersona = true }) {
-                        Icon(Icons.Filled.Person, contentDescription = stringResource(R.string.persona_title))
-                    }
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.section_settings))
+                    Box {
+                        IconButton(onClick = { showMore = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.more_actions))
+                        }
+                        DropdownMenu(expanded = showMore, onDismissRequest = { showMore = false }) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.persona_title)) },
+                                leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null) },
+                                onClick = {
+                                    showMore = false
+                                    showPersona = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.section_settings)) },
+                                leadingIcon = { Icon(Icons.Filled.Settings, contentDescription = null) },
+                                onClick = {
+                                    showMore = false
+                                    onOpenSettings()
+                                },
+                            )
+                        }
                     }
                 },
             )
         },
         bottomBar = {
-            ChatComposer(
-                input = state.input,
-                pendingImages = state.pendingImages,
-                drawMode = state.drawMode,
-                generating = state.generating,
-                voiceMode = voiceMode,
-                voicePhase = voicePhase,
-                onInput = viewModel::updateInput,
-                onSend = viewModel::send,
-                onStopGeneration = viewModel::stop,
-                onToggleDrawMode = viewModel::toggleDrawMode,
-                onPickImages = {
-                    pickImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                },
-                onRemoveImage = viewModel::removeImage,
-                onToggleVoiceMode = {
-                    if (voiceMode) {
-                        if (voicePhase != VoicePhase.Idle) speech.destroy()
-                        voicePhase = VoicePhase.Idle
-                        voiceMode = false
-                    } else if (
-                        ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
-                        PackageManager.PERMISSION_GRANTED
-                    ) {
-                        voiceMode = true
-                    } else {
-                        recordPermission.launch(Manifest.permission.RECORD_AUDIO)
-                    }
-                },
-                onHoldStart = { speech.start(viewModel.state.value.input) },
-                onHoldEnd = { speech.stop() },
-            )
+            Column {
+                val tailDone = state.messages.lastOrNull()?.status == MessageStatus.DONE
+                if (state.messages.isNotEmpty() && !state.generating && tailDone) {
+                    QuickPrompts(onPick = { viewModel.applySuggestion(it, false) })
+                }
+                ChatComposer(
+                    input = state.input,
+                    pendingImages = state.pendingImages,
+                    drawMode = state.drawMode,
+                    generating = state.generating,
+                    voiceMode = voiceMode,
+                    voicePhase = voicePhase,
+                    onInput = viewModel::updateInput,
+                    onSend = viewModel::send,
+                    onStopGeneration = viewModel::stop,
+                    onToggleDrawMode = viewModel::toggleDrawMode,
+                    onPickImages = {
+                        pickImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    },
+                    onRemoveImage = viewModel::removeImage,
+                    onToggleVoiceMode = {
+                        if (voiceMode) {
+                            if (voicePhase != VoicePhase.Idle) speech.destroy()
+                            voicePhase = VoicePhase.Idle
+                            voiceMode = false
+                        } else if (
+                            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                            PackageManager.PERMISSION_GRANTED
+                        ) {
+                            voiceMode = true
+                        } else {
+                            recordPermission.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    },
+                    onHoldStart = { speech.start(viewModel.state.value.input) },
+                    onHoldEnd = { speech.stop() },
+                )
+            }
         },
     ) { padding ->
-        if (state.messages.isEmpty()) {
-            WelcomePane(
-                persona = state.conversation?.systemPrompt.orEmpty(),
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .consumeWindowInsets(padding),
-                onSuggest = viewModel::applySuggestion,
-            )
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .consumeWindowInsets(padding),
-                state = listState,
-                reverseLayout = true,
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                items(state.messages.asReversed(), key = { it.id }) { message ->
-                    MessageBubble(
-                        message = message,
-                        speaking = state.speakingId == message.id,
-                        onRetry = viewModel::retry,
-                        onSpeak = { viewModel.toggleSpeak(message) },
-                        onCopy = {
-                            scope.launch {
-                                clipboard.setClipEntry(
-                                    ClipData.newPlainText(copyLabel, message.content).toClipEntry(),
-                                )
-                            }
-                        },
-                        onPreview = { previewPath = it },
-                    )
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (state.messages.isEmpty()) {
+                WelcomePane(
+                    persona = state.conversation?.systemPrompt.orEmpty(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                        .consumeWindowInsets(padding),
+                    onSuggest = viewModel::applySuggestion,
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                        .consumeWindowInsets(padding),
+                    state = listState,
+                    reverseLayout = true,
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    items(state.messages.asReversed(), key = { it.id }) { message ->
+                        MessageBubble(
+                            message = message,
+                            speaking = state.speakingId == message.id,
+                            onRetry = viewModel::retry,
+                            onSpeak = { viewModel.toggleSpeak(message) },
+                            onCopy = {
+                                scope.launch {
+                                    clipboard.setClipEntry(
+                                        ClipData.newPlainText(copyLabel, message.content).toClipEntry(),
+                                    )
+                                }
+                            },
+                            onPreview = { previewPath = it },
+                        )
+                    }
+                }
+                if (listState.firstVisibleItemIndex > 1) {
+                    FilledTonalIconButton(
+                        onClick = { scope.launch { listState.animateScrollToItem(0) } },
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 8.dp),
+                    ) {
+                        Icon(
+                            Icons.Filled.KeyboardArrowDown,
+                            contentDescription = stringResource(R.string.scroll_to_bottom),
+                        )
+                    }
                 }
             }
         }
@@ -664,6 +717,7 @@ private fun ChatHoldPad(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MessageBubble(
     message: ChatMessage,
@@ -674,67 +728,52 @@ private fun MessageBubble(
     onPreview: (String) -> Unit,
 ) {
     val isUser = message.role == Role.USER
-    val alignment = if (isUser) Alignment.End else Alignment.Start
-    val container = when {
-        message.status == MessageStatus.FAILED -> MaterialTheme.colorScheme.errorContainer
-        isUser -> MaterialTheme.colorScheme.primaryContainer
-        else -> MaterialTheme.colorScheme.surfaceVariant
-    }
-    val contentColor = when {
-        message.status == MessageStatus.FAILED -> MaterialTheme.colorScheme.onErrorContainer
-        isUser -> MaterialTheme.colorScheme.onPrimaryContainer
-        else -> MaterialTheme.colorScheme.onSurface
-    }
-    val shape = if (isUser) {
-        RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp)
-    } else {
-        RoundedCornerShape(22.dp, 22.dp, 22.dp, 6.dp)
-    }
+    val failed = message.status == MessageStatus.FAILED
+    val streaming = message.status == MessageStatus.STREAMING
     val markdownUrls = remember(message.content) { extractMarkdownImageUrls(message.content) }
+    var menuOpen by remember { mutableStateOf(false) }
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(message.id) { visible = true }
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(tween(220)) + slideInVertically(tween(220)) { it / 6 },
     ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
-        verticalAlignment = Alignment.Bottom,
-    ) {
-        if (!isUser) {
-            AvatarBubble(label = "AI", tint = MaterialTheme.colorScheme.secondary)
-            Spacer(Modifier.width(8.dp))
-        }
-        Column(
-            modifier = Modifier.weight(1f, fill = false),
-            horizontalAlignment = alignment,
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+            verticalAlignment = Alignment.Bottom,
         ) {
-            if (!isUser && message.reasoning.isNotBlank()) {
-                ReasoningBlock(message.reasoning)
+            if (!isUser) {
+                AvatarBubble(label = stringResource(R.string.voice_assistant).take(1), tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(10.dp))
             }
-            Surface(
-                color = container,
-                contentColor = contentColor,
-                shape = shape,
-                modifier = Modifier.fillMaxWidth(0.88f),
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(if (isUser) 0.84f else 0.9f)
+                    .combinedClickable(onClick = {}, onLongClick = { menuOpen = true }),
             ) {
-                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                    if (message.attachments.isNotEmpty()) {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
-                            message.attachments.forEach { attachment ->
-                                AsyncImage(
-                                    model = File(attachment.localPath),
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(max = 240.dp)
-                                        .clip(RoundedCornerShape(14.dp))
-                                        .clickable { onPreview(attachment.localPath) },
-                                    contentScale = ContentScale.Crop,
-                                )
-                            }
-                        }
+                Column(horizontalAlignment = if (isUser) Alignment.End else Alignment.Start) {
+                    if (!isUser) {
+                        Text(
+                            stringResource(R.string.voice_assistant),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                    }
+                    message.attachments.forEach { attachment ->
+                        AsyncImage(
+                            model = File(attachment.localPath),
+                            contentDescription = null,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 240.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .clickable { onPreview(attachment.localPath) },
+                            contentScale = ContentScale.Crop,
+                        )
+                        Spacer(Modifier.height(8.dp))
                     }
                     markdownUrls.forEach { url ->
                         AsyncImage(
@@ -742,70 +781,161 @@ private fun MessageBubble(
                             contentDescription = null,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(bottom = 8.dp)
                                 .heightIn(max = 240.dp)
                                 .clip(RoundedCornerShape(14.dp))
                                 .clickable { onPreview(url) },
                             contentScale = ContentScale.Crop,
                         )
+                        Spacer(Modifier.height(8.dp))
                     }
                     val body = when {
-                        message.content.isNotBlank() && message.status == MessageStatus.STREAMING -> "${message.content}▍"
+                        message.content.isNotBlank() && streaming -> "${message.content}▍"
                         message.content.isNotBlank() -> message.content
-                        message.status == MessageStatus.STREAMING -> "▍"
+                        streaming -> "▍"
                         message.attachments.isNotEmpty() -> ""
                         else -> stringResource(R.string.empty_reply)
                     }
                     if (body.isNotBlank()) {
                         if (isUser) {
-                            Text(body, style = MaterialTheme.typography.bodyLarge)
+                            Surface(
+                                color = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                                shape = RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(
+                                    body,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                )
+                            }
                         } else {
-                            MarkdownText(text = body, color = contentColor)
+                            if (message.reasoning.isNotBlank()) {
+                                ReasoningBlock(message.reasoning)
+                            }
+                            MarkdownText(text = body, color = MaterialTheme.colorScheme.onSurface)
                         }
                     }
-                    if (message.content.isNotBlank()) {
-                        Row(modifier = Modifier.align(Alignment.End)) {
-                            IconButton(
-                                onClick = onCopy,
-                                modifier = Modifier.size(28.dp),
-                            ) {
+                    if (failed) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier
+                                .padding(top = 6.dp)
+                                .fillMaxWidth(),
+                        ) {
+                            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                                if (message.error.isNotBlank()) {
+                                    Text(
+                                        message.error,
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                                TextButton(onClick = onRetry) { Text(stringResource(R.string.retry)) }
+                            }
+                        }
+                    }
+                    if (!isUser && message.content.isNotBlank() && !streaming) {
+                        Row(
+                            modifier = Modifier.padding(top = 2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            IconButton(onClick = onCopy, modifier = Modifier.size(30.dp)) {
                                 Icon(
                                     Icons.Filled.ContentCopy,
                                     contentDescription = stringResource(R.string.copy_message),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(15.dp),
                                 )
                             }
-                            IconButton(
-                                onClick = onSpeak,
-                                modifier = Modifier.size(28.dp),
-                            ) {
+                            IconButton(onClick = onSpeak, modifier = Modifier.size(30.dp)) {
                                 Icon(
                                     if (speaking) Icons.Filled.Stop else Icons.AutoMirrored.Filled.VolumeUp,
                                     contentDescription = stringResource(if (speaking) R.string.stop_reading else R.string.read_message),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+                            IconButton(onClick = onRetry, modifier = Modifier.size(30.dp)) {
+                                Icon(
+                                    Icons.Filled.Refresh,
+                                    contentDescription = stringResource(R.string.retry),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+                            IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(30.dp)) {
+                                Icon(
+                                    Icons.Filled.MoreVert,
+                                    contentDescription = stringResource(R.string.more_actions),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(16.dp),
                                 )
                             }
                         }
                     }
                 }
-            }
-            if (message.status == MessageStatus.FAILED) {
-                if (message.error.isNotBlank()) {
-                    Text(
-                        message.error,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(top = 4.dp),
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.copy_message)) },
+                        onClick = {
+                            menuOpen = false
+                            onCopy()
+                        },
                     )
+                    if (!isUser) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(if (speaking) R.string.stop_reading else R.string.read_message)) },
+                            onClick = {
+                                menuOpen = false
+                                onSpeak()
+                            },
+                        )
+                    }
+                    if (!isUser && !streaming && message.content.isNotBlank()) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.retry)) },
+                            onClick = {
+                                menuOpen = false
+                                onRetry()
+                            },
+                        )
+                    }
                 }
-                TextButton(onClick = onRetry) { Text(stringResource(R.string.retry)) }
             }
-        }
-        if (isUser) {
-            Spacer(Modifier.width(8.dp))
-            AvatarBubble(label = stringResource(R.string.avatar_me), tint = MaterialTheme.colorScheme.primary)
         }
     }
+}
+
+@Composable
+private fun QuickPrompts(onPick: (String) -> Unit) {
+    val prompts = listOf(
+        stringResource(R.string.quick_simpler),
+        stringResource(R.string.quick_example),
+        stringResource(R.string.quick_continue),
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 14.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        prompts.forEach { prompt ->
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.clickable { onPick(prompt) },
+            ) {
+                Text(
+                    prompt,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                )
+            }
+        }
     }
 }
 

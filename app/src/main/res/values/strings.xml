@@ -344,4 +344,9 @@
     <string name="empty_title">还没有对话</string>
     <string name="empty_body">从一个问题开始，或者先到设置里填好 API Key。</string>
     <string name="save">保存</string>
+    <string name="more_actions">更多</string>
+    <string name="scroll_to_bottom">回到底部</string>
+    <string name="quick_simpler">再简单点</string>
+    <string name="quick_example">举个例子</string>
+    <string name="quick_continue">继续</string>
 </resources>
