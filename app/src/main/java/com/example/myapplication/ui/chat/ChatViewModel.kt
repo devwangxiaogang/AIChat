@@ -226,11 +226,21 @@ class ChatViewModel @Inject constructor(
     fun recognize(wav: ByteArray, onSuccess: (String) -> Unit, onFailure: (String) -> Unit) {
         viewModelScope.launch {
             try {
-                val apiKey = settingsRepository.get(ProviderId.DOUBAO).speechApiKey.trim()
-                if (apiKey.isEmpty()) {
+                val config = settingsRepository.get(ProviderId.DOUBAO)
+                val apiKey = config.speechApiKey.trim()
+                val appId = config.speechAppId.trim()
+                val accessToken = config.speechAccessToken.trim()
+                if (apiKey.isEmpty() && (appId.isEmpty() || accessToken.isEmpty())) {
                     onFailure(context.getString(R.string.asr_key_missing))
                 } else {
-                    onSuccess(speechRecognizer.transcribe(apiKey, wav))
+                    onSuccess(
+                        speechRecognizer.transcribe(
+                            apiKey = apiKey,
+                            wav = wav,
+                            appId = appId,
+                            accessToken = accessToken,
+                        ),
+                    )
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled

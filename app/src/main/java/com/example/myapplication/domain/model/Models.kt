@@ -150,6 +150,9 @@ data class ProviderConfig(
     val baseUrl: String,
     val model: String,
     val speechApiKey: String = "",
+    /** 旧版控制台的语音应用凭证；与 [speechAccessToken] 同时填写时优先用它们鉴权。 */
+    val speechAppId: String = "",
+    val speechAccessToken: String = "",
 )
 
 data class ToolCallRequest(

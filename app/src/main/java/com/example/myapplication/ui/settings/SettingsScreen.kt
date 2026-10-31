@@ -204,6 +204,23 @@ private fun ProviderForm(
                     singleLine = true,
                     supportingText = { Text(stringResource(R.string.speech_api_key_help)) },
                 )
+                OutlinedTextField(
+                    value = config.speechAppId,
+                    onValueChange = { onChange(config.copy(speechAppId = it)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.speech_app_id)) },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = config.speechAccessToken,
+                    onValueChange = { onChange(config.copy(speechAccessToken = it)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.speech_access_token)) },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    singleLine = true,
+                    supportingText = { Text(stringResource(R.string.speech_legacy_help)) },
+                )
                 Text(stringResource(R.string.read_aloud), style = MaterialTheme.typography.labelLarge)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TtsEngine.entries.forEach { engine ->

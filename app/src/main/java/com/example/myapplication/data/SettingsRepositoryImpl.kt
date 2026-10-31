@@ -35,6 +35,8 @@ class SettingsRepositoryImpl @Inject constructor(
             .putString(key(config.provider, "baseUrl"), config.baseUrl.trim())
             .putString(key(config.provider, "model"), config.model.trim())
             .putString(key(config.provider, "speechApiKey"), config.speechApiKey.trim())
+            .putString(key(config.provider, "speechAppId"), config.speechAppId.trim())
+            .putString(key(config.provider, "speechAccessToken"), config.speechAccessToken.trim())
             .apply()
         state.value = readAll()
     }
@@ -97,6 +99,8 @@ class SettingsRepositoryImpl @Inject constructor(
                     ?.takeIf { it.isNotBlank() }
                     ?: provider.defaultModel,
                 speechApiKey = prefs.getString(key(provider, "speechApiKey"), "").orEmpty(),
+                speechAppId = prefs.getString(key(provider, "speechAppId"), "").orEmpty(),
+                speechAccessToken = prefs.getString(key(provider, "speechAccessToken"), "").orEmpty(),
             )
         }
     }.getOrElse {

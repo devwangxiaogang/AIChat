@@ -45,6 +45,9 @@
     <string name="api_key">API Key</string>
     <string name="speech_api_key">Speech API key</string>
     <string name="speech_api_key_help">Key from the Doubao Speech console, used for recognition, simultaneous interpretation, and read-aloud</string>
+    <string name="speech_app_id">Speech AppID</string>
+    <string name="speech_access_token">Speech Access Token</string>
+    <string name="speech_legacy_help">Credentials from the legacy console. When both are filled, speech recognition uses AppID + Access Token authentication</string>
     <string name="read_aloud">Read aloud</string>
     <string name="hide_endpoint">Hide endpoint</string>
     <string name="show_endpoint">Endpoint</string>
@@ -181,6 +184,8 @@
     <string name="asr_connect_failed">Could not connect to Doubao Speech</string>
     <string name="asr_failed_detail">Doubao speech recognition failed (%1$s)</string>
     <string name="asr_empty">No speech recognized</string>
+    <string name="asr_key_invalid">The Doubao Speech API key is invalid. Re-enter it in Settings</string>
+    <string name="asr_forbidden">Speech service not enabled or not authorized (HTTP 403, LogID %1$s). Check in the Doubao Speech console that streaming ASR is enabled for this account</string>
     <string name="choose_model_error">Choose a model</string>
     <string name="generating">A reply is being generated</string>
     <string name="conversation_missing">Conversation not found</string>

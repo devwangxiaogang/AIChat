@@ -186,15 +186,30 @@ class TranslateViewModel @Inject constructor(
     fun recognize(wav: ByteArray, onSuccess: (String) -> Unit, onFailure: (String) -> Unit) {
         viewModelScope.launch {
             try {
-                val apiKey = settingsRepository.get(ProviderId.DOUBAO).speechApiKey.trim()
-                if (apiKey.isEmpty()) {
+                val config = settingsRepository.get(ProviderId.DOUBAO)
+                val apiKey = config.speechApiKey.trim()
+                val appId = config.speechAppId.trim()
+                val accessToken = config.speechAccessToken.trim()
+                if (apiKey.isEmpty() && (appId.isEmpty() || accessToken.isEmpty())) {
                     onFailure(context.getString(R.string.asr_key_missing))
                 } else {
                     // 优先自动语种；服务端若要求明确语种，再回退中文识别。
                     val spoken = runCatching {
-                        speechRecognizer.transcribe(apiKey, wav, language = "")
+                        speechRecognizer.transcribe(
+                            apiKey = apiKey,
+                            wav = wav,
+                            language = "",
+                            appId = appId,
+                            accessToken = accessToken,
+                        )
                     }.getOrElse {
-                        speechRecognizer.transcribe(apiKey, wav, language = "zh-CN")
+                        speechRecognizer.transcribe(
+                            apiKey = apiKey,
+                            wav = wav,
+                            language = "zh-CN",
+                            appId = appId,
+                            accessToken = accessToken,
+                        )
                     }
                     onSuccess(spoken)
                 }

@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -31,8 +32,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 豆包流式语音识别 2.0。账号开通的是小时版，资源 ID 为 volc.seedasr.sauc.duration。
- * 极速版 volc.bigasr.auc_turbo 未开通，因此不用录音文件极速接口。
+ * 豆包流式语音识别。资源 ID 按账号开通情况自动选择（2.0/1.0、小时版/并发版），
+ * 成功后记住可用的那个，避免每次按住说话都重新试探。
  * 音频走 WebSocket 二进制帧：4 字节头、大端长度、Gzip 负载。
  */
 @Singleton
@@ -41,20 +42,90 @@ class DoubaoAsrClient @Inject constructor(
     private val http: OkHttpClient,
     private val json: Json,
 ) {
+    /** 上次握手成功的资源 ID，优先复用。 */
+    @Volatile
+    private var workingResourceId: String? = null
+
     /**
      * @param language BCP-47 语种，如 zh-CN / en-US；空字符串表示交给服务端自动检测。
+     *
+     * 不同账号开通的语音识别包不一样（2.0/1.0、小时版/并发版），资源 ID 不匹配时
+     * 服务端会回 403。这里按顺序尝试，成功后记住可用的那个。
      */
-    suspend fun transcribe(apiKey: String, wav: ByteArray, language: String = "zh-CN"): String = withContext(Dispatchers.IO) {
+    suspend fun transcribe(
+        apiKey: String,
+        wav: ByteArray,
+        language: String = "zh-CN",
+        appId: String = "",
+        accessToken: String = "",
+    ): String = withContext(Dispatchers.IO) {
         val asrLanguage = language.trim()
+        val legacyAppId = appId.trim()
+        val legacyToken = accessToken.trim()
+        var lastFailure: SpeechHttpException? = null
+        for (resourceId in candidateResources()) {
+            try {
+                val text = transcribeOnce(
+                    apiKey = apiKey.trim(),
+                    appId = legacyAppId,
+                    accessToken = legacyToken,
+                    wav = wav,
+                    language = asrLanguage,
+                    resourceId = resourceId,
+                )
+                workingResourceId = resourceId
+                return@withContext text
+            } catch (failure: SpeechHttpException) {
+                lastFailure = failure
+                android.util.Log.w(
+                    "DoubaoAsr",
+                    "resource=$resourceId http=${failure.code} " +
+                        "detail=${failure.detail.ifBlank { "-" }} logid=${failure.logId.ifBlank { "-" }}",
+                )
+                // 401 是 Key 本身无效，换资源没有意义。
+                if (failure.code == 401) break
+            }
+        }
+        val failure = lastFailure
+        when {
+            failure == null -> error(context.getString(R.string.asr_connect_failed))
+            failure.code == 401 -> error(context.getString(R.string.asr_key_invalid))
+            failure.code == 403 -> error(
+                context.getString(R.string.asr_forbidden, failure.logId.ifBlank { "-" }),
+            )
+            else -> error(
+                context.getString(
+                    R.string.asr_failed_detail,
+                    failure.detail.ifBlank { context.getString(R.string.asr_connect_failed) },
+                ),
+            )
+        }
+    }
+
+    private suspend fun transcribeOnce(
+        apiKey: String,
+        appId: String,
+        accessToken: String,
+        wav: ByteArray,
+        language: String,
+        resourceId: String,
+    ): String {
         val messages = Channel<ByteArray>(Channel.UNLIMITED)
         val failure = CompletableDeferred<Throwable>()
-        val request = Request.Builder()
+        val requestBuilder = Request.Builder()
             .url(ENDPOINT)
-            .header("X-Api-Key", apiKey)
-            .header("X-Api-Resource-Id", RESOURCE_ID)
+            .header("X-Api-Resource-Id", resourceId)
             .header("X-Api-Request-Id", UUID.randomUUID().toString())
             .header("X-Api-Sequence", "-1")
-            .build()
+        if (appId.isNotEmpty() && accessToken.isNotEmpty()) {
+            // 旧版控制台：AppID + Access Token，账号下开通的服务通常只有这种鉴权可用。
+            requestBuilder
+                .header("X-Api-App-Key", appId)
+                .header("X-Api-Access-Key", accessToken)
+        } else {
+            requestBuilder.header("X-Api-Key", apiKey)
+        }
+        val request = requestBuilder.build()
         val socket = http.newWebSocket(
             request,
             object : WebSocketListener() {
@@ -66,15 +137,13 @@ class DoubaoAsrClient @Inject constructor(
                     val status = response?.header("X-Api-Status-Code").orEmpty()
                     val message = response?.header("X-Api-Message").orEmpty()
                     val logId = response?.header("X-Tt-Logid").orEmpty()
+                    val httpCode = response?.code ?: 0
                     android.util.Log.w(
                         "DoubaoAsr",
-                        "handshake http=${response?.code} status=$status message=$message logid=$logId",
+                        "handshake resource=$resourceId http=$httpCode status=$status message=$message logid=$logId",
                     )
                     val detail = message.ifBlank { status.ifBlank { t.message.orEmpty() } }
-                    val error = IllegalStateException(
-                        context.getString(R.string.asr_failed_detail, detail.ifBlank { context.getString(R.string.asr_connect_failed) }),
-                        t,
-                    )
+                    val error = SpeechHttpException(httpCode, detail, logId, t)
                     failure.complete(error)
                     messages.close(error)
                 }
@@ -85,8 +154,8 @@ class DoubaoAsrClient @Inject constructor(
             },
         )
         try {
-            if (!socket.send(clientFrame(FULL_CLIENT, 0, JSON_SERIAL, gzip(requestPayload(asrLanguage))).toByteString())) {
-                error(context.getString(R.string.asr_connect_failed))
+            if (!socket.send(clientFrame(FULL_CLIENT, 0, JSON_SERIAL, gzip(requestPayload(language))).toByteString())) {
+                throw handshakeFailure(failure)
             }
             var offset = 0
             while (offset < wav.size) {
@@ -96,7 +165,7 @@ class DoubaoAsrClient @Inject constructor(
                 val sent = socket.send(
                     clientFrame(AUDIO_ONLY, flags, RAW_SERIAL, gzip(wav.copyOfRange(offset, end))).toByteString(),
                 )
-                if (!sent) error(context.getString(R.string.asr_connect_failed))
+                if (!sent) throw handshakeFailure(failure)
                 offset = end
             }
             var spoken = ""
@@ -104,19 +173,43 @@ class DoubaoAsrClient @Inject constructor(
                 val packet = withTimeout(RESULT_TIMEOUT_MS) { messages.receive() }
                 val parsed = parseServer(packet)
                 if (parsed.failure != null) {
-                    android.util.Log.w("DoubaoAsr", "server ${parsed.failure}")
+                    android.util.Log.w("DoubaoAsr", "server resource=$resourceId ${parsed.failure}")
                     error(context.getString(R.string.asr_failed_detail, parsed.failure))
                 }
                 if (parsed.text.isNotBlank()) spoken = parsed.text
                 if (parsed.finished) break
             }
-            spoken.trim().ifEmpty { error(context.getString(R.string.asr_empty)) }
+            return spoken.trim().ifEmpty { error(context.getString(R.string.asr_empty)) }
         } finally {
             socket.close(1000, "done")
             messages.close()
             if (!failure.isCompleted) failure.cancel()
         }
     }
+
+    /** 握手失败时 OkHttp 只能通过 onFailure 拿到状态码，这里把它取回来。 */
+    private suspend fun handshakeFailure(failure: CompletableDeferred<Throwable>): Throwable =
+        withTimeoutOrNull(HANDSHAKE_WAIT_MS) { failure.await() }
+            ?: IllegalStateException(context.getString(R.string.asr_connect_failed))
+
+    /** 依次尝试 2.0/1.0、小时版/并发版；上次成功的排在最前面。 */
+    private fun candidateResources(): List<String> {
+        val all = listOf(
+            RESOURCE_ID_SEEDASR_DURATION,
+            RESOURCE_ID_SEEDASR_CONCURRENT,
+            RESOURCE_ID_BIGASR_DURATION,
+            RESOURCE_ID_BIGASR_CONCURRENT,
+        )
+        val preferred = workingResourceId ?: return all
+        return listOf(preferred) + all.filter { it != preferred }
+    }
+
+    private class SpeechHttpException(
+        val code: Int,
+        val detail: String,
+        val logId: String,
+        cause: Throwable?,
+    ) : Exception("http $code $detail", cause)
 
     private fun requestPayload(language: String): ByteArray = buildJsonObject {
         putJsonObject("user") { put("uid", "aidemo") }
@@ -211,7 +304,11 @@ class DoubaoAsrClient @Inject constructor(
     private companion object {
         // nostream：整段音频发完后再返回结果，适合按住说话后一次识别。
         const val ENDPOINT = "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream"
-        const val RESOURCE_ID = "volc.seedasr.sauc.duration"
+        const val RESOURCE_ID_SEEDASR_DURATION = "volc.seedasr.sauc.duration"
+        const val RESOURCE_ID_SEEDASR_CONCURRENT = "volc.seedasr.sauc.concurrent"
+        const val RESOURCE_ID_BIGASR_DURATION = "volc.bigasr.sauc.duration"
+        const val RESOURCE_ID_BIGASR_CONCURRENT = "volc.bigasr.sauc.concurrent"
+        const val HANDSHAKE_WAIT_MS = 1_500L
         const val FULL_CLIENT = 0x1
         const val AUDIO_ONLY = 0x2
         const val ERROR = 0xF
