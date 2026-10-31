@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">AI助手</string>
+    <string name="app_name">语光</string>
     <string name="assistant_prompt">你是一个有帮助的助手。</string>
     <string name="section_chat">AI 对话</string>
     <string name="section_translate">AI 翻译</string>
@@ -352,7 +352,7 @@
     <string name="theme_system">跟随系统</string>
     <string name="theme_light">浅色</string>
     <string name="theme_dark">深色</string>
-    <string name="onboarding_title">欢迎使用 AI 助手</string>
+    <string name="onboarding_title">欢迎使用语光</string>
     <string name="onboarding_intro">对话、翻译、语音，一套密钥就能开始。密钥只保存在本机，并用 Android Keystore 加密。</string>
     <string name="onboarding_deepseek">DeepSeek API Key</string>
     <string name="onboarding_doubao">豆包（方舟）API Key</string>

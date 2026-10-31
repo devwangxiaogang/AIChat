@@ -1,13 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <path
-        android:fillColor="#1F4E46"
-        android:pathData="M0,0h108v108h-108z" />
-    <path
-        android:fillColor="#2A675C"
-        android:pathData="M78,8a34,34 0 1 1 0,68a34,34 0 1 1 0,-68z" />
-</vector>
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient
+        android:angle="135"
+        android:endColor="#8B96FF"
+        android:startColor="#4A5BF2"
+        android:type="linear" />
+</shape>

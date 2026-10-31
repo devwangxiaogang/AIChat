@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">AI Assistant</string>
+    <string name="app_name">Lumo</string>
     <string name="assistant_prompt">You are a helpful assistant.</string>
     <string name="section_chat">AI Chat</string>
     <string name="section_translate">AI Translation</string>
@@ -352,7 +352,7 @@
     <string name="theme_system">Follow system</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
-    <string name="onboarding_title">Welcome to AI Assistant</string>
+    <string name="onboarding_title">Welcome to Lumo</string>
     <string name="onboarding_intro">Chat, translate and voice — all you need is an API key. Keys stay on this device, encrypted with Android Keystore.</string>
     <string name="onboarding_deepseek">DeepSeek API key</string>
     <string name="onboarding_doubao">Doubao (Ark) API key</string>
