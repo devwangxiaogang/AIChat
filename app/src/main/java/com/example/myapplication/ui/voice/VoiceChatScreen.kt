@@ -23,18 +23,19 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,12 +50,10 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.myapplication.R
-import com.example.myapplication.ui.chat.SpeechInput
-import com.example.myapplication.ui.chat.VoicePhase
 
 /**
- * 语音对话：按住说话 → 豆包识别 → 对话模型 → 豆包朗读。
- * 端到端实时语音需要控制台单独开通，这里先用现有链路保证可用。
+ * 端到端实时语音对话（Seeduplex）：开始后按住说话，松手后模型直接语音回复。
+ * 也可以打字发送，走同一条会话。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,25 +64,11 @@ fun VoiceChatScreen(
     val state = viewModel.state
     val context = LocalContext.current
     var input by remember { mutableStateOf("") }
-    var voicePhase by remember { mutableStateOf(VoicePhase.Idle) }
     var localError by remember { mutableStateOf<String?>(null) }
     val permission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (!granted) localError = context.getString(R.string.need_mic_live)
-    }
-
-    val speech = remember {
-        SpeechInput(
-            context = context,
-            onText = { spoken -> viewModel.send(spoken) },
-            onPhase = { phase -> voicePhase = phase },
-            onError = { message -> localError = message },
-            recognize = viewModel::recognize,
-        )
-    }
-    DisposableEffect(speech) {
-        onDispose { speech.destroy() }
     }
 
     Scaffold(
@@ -97,8 +82,8 @@ fun VoiceChatScreen(
                     }
                 },
                 actions = {
-                    if (state.busy) {
-                        IconButton(onClick = viewModel::stop) {
+                    if (state.connected || state.connecting) {
+                        IconButton(onClick = viewModel::stopSession) {
                             Icon(Icons.Filled.Stop, contentDescription = stringResource(R.string.voice_stop))
                         }
                     }
@@ -114,7 +99,11 @@ fun VoiceChatScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                stringResource(R.string.voice_hint),
+                text = when {
+                    state.connecting -> stringResource(R.string.voice_connecting)
+                    state.connected -> stringResource(R.string.voice_hint)
+                    else -> stringResource(R.string.voice_hint)
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -127,14 +116,17 @@ fun VoiceChatScreen(
                 if (state.userText.isNotBlank()) {
                     Caption(title = stringResource(R.string.voice_you), text = state.userText)
                 }
+                if (state.partialUserText.isNotBlank()) {
+                    Caption(title = stringResource(R.string.voice_you), text = state.partialUserText, muted = true)
+                }
                 if (state.assistantText.isNotBlank()) {
                     Caption(title = stringResource(R.string.voice_assistant), text = state.assistantText)
                 }
-                if (state.busy) {
+                if (state.connecting) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                         Spacer(Modifier.width(8.dp))
-                        Text(stringResource(R.string.generating), style = MaterialTheme.typography.bodySmall)
+                        Text(stringResource(R.string.voice_connecting), style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 val error = state.error ?: localError
@@ -148,66 +140,73 @@ fun VoiceChatScreen(
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text(stringResource(R.string.voice_type_hint)) },
                 maxLines = 3,
+                enabled = state.connected,
                 trailingIcon = {
                     IconButton(
                         onClick = {
-                            viewModel.send(input)
+                            viewModel.sendText(input)
                             input = ""
                         },
-                        enabled = input.isNotBlank() && !state.busy,
+                        enabled = input.isNotBlank() && state.connected,
                     ) {
                         Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.send))
                     }
                 },
             )
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(76.dp)
-                    .pointerInput(voicePhase) {
-                        detectTapGestures(
-                            onPress = {
-                                val granted = ContextCompat.checkSelfPermission(
-                                    context,
-                                    Manifest.permission.RECORD_AUDIO,
-                                ) == PackageManager.PERMISSION_GRANTED
-                                if (!granted) {
-                                    permission.launch(Manifest.permission.RECORD_AUDIO)
-                                    return@detectTapGestures
-                                }
-                                if (state.busy) return@detectTapGestures
-                                localError = null
-                                speech.start("")
-                                tryAwaitRelease()
-                                speech.stop()
-                            },
-                        )
+            if (state.connected) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(76.dp)
+                        .pointerInput(state.connected) {
+                            detectTapGestures(
+                                onPress = {
+                                    val granted = ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.RECORD_AUDIO,
+                                    ) == PackageManager.PERMISSION_GRANTED
+                                    if (!granted) {
+                                        permission.launch(Manifest.permission.RECORD_AUDIO)
+                                        return@detectTapGestures
+                                    }
+                                    localError = null
+                                    viewModel.pressStart()
+                                    tryAwaitRelease()
+                                    viewModel.pressEnd()
+                                },
+                            )
+                        },
+                    shape = RoundedCornerShape(24.dp),
+                    color = if (state.holding) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.secondaryContainer
                     },
-                shape = RoundedCornerShape(24.dp),
-                color = when (voicePhase) {
-                    VoicePhase.Listening -> MaterialTheme.colorScheme.primary
-                    VoicePhase.Recognizing -> MaterialTheme.colorScheme.primaryContainer
-                    VoicePhase.Idle -> MaterialTheme.colorScheme.secondaryContainer
-                },
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
                 ) {
-                    Icon(Icons.Filled.Mic, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(
-                            when (voicePhase) {
-                                VoicePhase.Listening -> R.string.release_to_stop
-                                VoicePhase.Recognizing -> R.string.recognizing
-                                VoicePhase.Idle -> R.string.hold_to_talk
-                            },
-                        ),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Medium,
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        Icon(Icons.Filled.Mic, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(if (state.holding) R.string.release_to_stop else R.string.hold_to_talk),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                }
+            } else {
+                Button(
+                    onClick = viewModel::startSession,
+                    enabled = !state.connecting,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(28.dp),
+                ) {
+                    Text(stringResource(R.string.voice_start), style = MaterialTheme.typography.titleMedium)
                 }
             }
             Spacer(Modifier.height(16.dp))
@@ -216,7 +215,7 @@ fun VoiceChatScreen(
 }
 
 @Composable
-private fun Caption(title: String, text: String) {
+private fun Caption(title: String, text: String, muted: Boolean = false) {
     Surface(
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surface,
@@ -228,7 +227,12 @@ private fun Caption(title: String, text: String) {
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text(text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 6.dp))
+            Text(
+                text,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (muted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(top = 6.dp),
+            )
         }
     }
 }
