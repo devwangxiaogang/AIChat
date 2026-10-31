@@ -284,4 +284,15 @@
     <string name="voice_forbidden_hint">没有调用权限（403）：请到豆包语音控制台「API Key 管理」确认这个 Key 所属项目已开通「实时语音（Seeduplex）」服务</string>
     <string name="voice_fallback_hint">实时语音未开通或无权限，已自动切换为基础语音对话（豆包识别 → 对话模型 → 豆包朗读）</string>
     <string name="voice_greeting_hint">打招呼：输入文字让豆包直接朗读</string>
+    <string name="voice_status_connected">已连接</string>
+    <string name="voice_status_connecting">连接中</string>
+    <string name="voice_status_offline">未连接</string>
+    <string name="voice_duration">通话 %1$s</string>
+    <string name="voice_offline_hint">端到端实时语音</string>
+    <string name="voice_settings_title">语音设置</string>
+    <string name="voice_settings_tone">音色</string>
+    <string name="voice_settings_speed">语速 %1$d</string>
+    <string name="voice_settings_next">修改将在下次开始对话时生效</string>
+    <string name="voice_settings_done">完成</string>
+    <string name="voice_copy_done">已复制</string>
 </resources>

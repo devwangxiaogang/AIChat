@@ -62,6 +62,7 @@ class DoubaoVoiceChatClient @Inject constructor(
         accessToken: String,
         voice: String,
         instructions: String,
+        speed: Int = 0,
         onEvent: (VoiceChatEvent) -> Unit,
     ): VoiceSession = withContext(Dispatchers.IO) {
         val ready = CompletableDeferred<Unit>()
@@ -89,7 +90,7 @@ class DoubaoVoiceChatClient @Inject constructor(
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 socket = webSocket
                 Log.d(TAG, "open, sending session.create")
-                webSocket.send(sessionCreate(voice, instructions))
+                webSocket.send(sessionCreate(voice, instructions, speed))
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -172,7 +173,7 @@ class DoubaoVoiceChatClient @Inject constructor(
         return if (logId.isBlank()) base else "$base（$logId）"
     }
 
-    private fun sessionCreate(voice: String, instructions: String): String = buildJsonObject {
+    private fun sessionCreate(voice: String, instructions: String, speed: Int): String = buildJsonObject {
         put("type", "session.create")
         putJsonObject("session") {
             put("model", MODEL)
@@ -190,7 +191,7 @@ class DoubaoVoiceChatClient @Inject constructor(
                         put("rate", 24_000)
                     }
                     put("voice", voice.ifBlank { DEFAULT_VOICE })
-                    put("speed", 0)
+                    put("speed", speed)
                     put("loudness", 0)
                 }
             }

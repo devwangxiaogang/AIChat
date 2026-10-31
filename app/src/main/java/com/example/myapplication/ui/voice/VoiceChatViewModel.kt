@@ -47,6 +47,9 @@ data class VoiceChatUiState(
     val partialUserText: String = "",
     val assistantText: String = "",
     val error: String? = null,
+    val voice: VoiceChoice = VoiceChoice.FEMALE,
+    val speed: Int = 0,
+    val durationSec: Int = 0,
     /** 实时语音不可用（未开通/无权限）时，自动切换到识别→对话→朗读的兜底链路。 */
     val fallback: Boolean = false,
 )
@@ -76,7 +79,15 @@ class VoiceChatViewModel @Inject constructor(
 
     private var turnBase = ""
     private var reply = ""
+    private var tickerJob: Job? = null
     private val history = mutableListOf<WireMessage>()
+
+    init {
+        viewModelScope.launch {
+            val saved = settingsRepository.speech().liveVoice
+            state = state.copy(voice = if (saved == VoiceChoice.CLONE) VoiceChoice.FEMALE else saved)
+        }
+    }
 
     fun startSession() {
         if (state.connecting || session != null) return
@@ -91,20 +102,22 @@ class VoiceChatViewModel @Inject constructor(
         turnBase = ""
         reply = ""
         history.clear()
+        state = state.copy(durationSec = 0)
         connectJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 val config = settingsRepository.get(ProviderId.DOUBAO)
-                val voice = settingsRepository.speech().liveVoice
-                val speaker = (if (voice == VoiceChoice.CLONE) VoiceChoice.FEMALE else voice).ttsSpeakerId
+                val speaker = (if (state.voice == VoiceChoice.CLONE) VoiceChoice.FEMALE else state.voice).ttsSpeakerId
                 val created = client.connect(
                     apiKey = config.speechApiKey.trim(),
                     appId = config.speechAppId.trim(),
                     accessToken = config.speechAccessToken.trim(),
                     voice = speaker,
                     instructions = context.getString(R.string.assistant_prompt),
+                    speed = state.speed,
                 ) { event -> handle(event) }
                 session = created
                 state = state.copy(connecting = false, connected = true, fallback = false)
+                startTicker()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -118,19 +131,45 @@ class VoiceChatViewModel @Inject constructor(
                     fallback = true,
                     error = detail,
                 )
+                startTicker()
             }
         }
     }
 
     fun stopSession() {
         stopCapture()
+        stopTicker()
         localJob?.cancel()
         localJob = null
         speechReader.stop()
         session?.close()
         session = null
         player.release()
-        state = state.copy(connected = false, connecting = false, holding = false, speaking = false)
+        state = state.copy(connected = false, connecting = false, holding = false, speaking = false, durationSec = 0)
+    }
+
+    fun setVoice(voice: VoiceChoice) {
+        state = state.copy(voice = if (voice == VoiceChoice.CLONE) VoiceChoice.FEMALE else voice)
+    }
+
+    fun setSpeed(speed: Int) {
+        state = state.copy(speed = speed.coerceIn(-50, 100))
+    }
+
+    private fun startTicker() {
+        stopTicker()
+        tickerJob = viewModelScope.launch {
+            while (currentCoroutineContext().isActive) {
+                kotlinx.coroutines.delay(1_000)
+                if (!state.connected) break
+                state = state.copy(durationSec = state.durationSec + 1)
+            }
+        }
+    }
+
+    private fun stopTicker() {
+        tickerJob?.cancel()
+        tickerJob = null
     }
 
     /** 按住：打断当前播报，开始上行音频（实时语音模式）。 */
@@ -295,10 +334,12 @@ class VoiceChatViewModel @Inject constructor(
             VoiceChatEvent.AssistantAudioDone -> state = state.copy(speaking = false)
             VoiceChatEvent.Ended -> {
                 session = null
+                stopTicker()
                 state = state.copy(connected = false, holding = false, speaking = false)
             }
             is VoiceChatEvent.Failed -> {
                 session = null
+                stopTicker()
                 state = state.copy(
                     connected = true,
                     connecting = false,
