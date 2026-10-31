@@ -1,6 +1,7 @@
 package com.example.myapplication.data.remote
 
 import android.content.Context
+import android.util.Log
 import com.example.myapplication.R
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
@@ -87,6 +88,7 @@ class DoubaoVoiceChatClient @Inject constructor(
 
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 socket = webSocket
+                Log.d(TAG, "open, sending session.create")
                 webSocket.send(sessionCreate(voice, instructions))
             }
 
@@ -94,6 +96,7 @@ class DoubaoVoiceChatClient @Inject constructor(
                 val obj = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return
                 when (val type = obj["type"]?.jsonPrimitive?.contentOrNull.orEmpty()) {
                     "session.created" -> {
+                        Log.d(TAG, "session.created")
                         ready.complete(Unit)
                         onEvent(VoiceChatEvent.SessionStarted)
                     }
@@ -104,8 +107,10 @@ class DoubaoVoiceChatClient @Inject constructor(
                     }
                     "conversation.item.input_audio_transcription.completed" -> {
                         val text = obj["transcript"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                        Log.d(TAG, "asr final: $text")
                         if (text.isNotBlank()) onEvent(VoiceChatEvent.UserText(text, true))
                     }
+                    "input_audio_buffer.committed" -> Log.d(TAG, "audio committed")
                     "conversation.item.input_audio_transcription.failed" -> {
                         val message = obj.errorMessage()
                         onEvent(VoiceChatEvent.Failed(message.ifBlank { context.getString(R.string.voice_failed) }))
@@ -118,7 +123,10 @@ class DoubaoVoiceChatClient @Inject constructor(
                         val delta = obj["delta"]?.jsonPrimitive?.contentOrNull.orEmpty()
                         if (delta.isNotEmpty()) {
                             val pcm = runCatching { Base64.getDecoder().decode(delta) }.getOrNull()
-                            if (pcm != null && pcm.isNotEmpty()) onEvent(VoiceChatEvent.Audio(pcm))
+                            if (pcm != null && pcm.isNotEmpty()) {
+                                Log.d(TAG, "audio delta ${pcm.size}")
+                                onEvent(VoiceChatEvent.Audio(pcm))
+                            }
                         }
                     }
                     "response.output_audio.done" -> onEvent(VoiceChatEvent.AssistantAudioDone)
@@ -128,6 +136,7 @@ class DoubaoVoiceChatClient @Inject constructor(
                         onEvent(VoiceChatEvent.Ended)
                     }
                     "error" -> {
+                        Log.w(TAG, "server error: $text")
                         val message = obj.errorMessage().ifBlank { context.getString(R.string.voice_failed) }
                         if (!ready.isCompleted) ready.completeExceptionally(IllegalStateException(message))
                         onEvent(VoiceChatEvent.Failed(message))
@@ -197,6 +206,7 @@ class DoubaoVoiceChatClient @Inject constructor(
     }
 
     private companion object {
+        const val TAG = "VoiceChat"
         const val ENDPOINT = "wss://openspeech.bytedance.com/api/v3/duplex/realtime/dialogue"
         const val MODEL = "1.2.6.1"
         const val DEFAULT_VOICE = "zh_female_vv_jupiter_bigtts"
@@ -206,8 +216,12 @@ class DoubaoVoiceChatClient @Inject constructor(
 
 /** 建好的会话：按住说话时持续 append，松开后 commit；也可以直接发文本。 */
 class VoiceSession internal constructor(private val socket: WebSocket) {
+    private var sentBytes = 0L
+
     fun appendAudio(pcm: ByteArray) {
         if (pcm.isEmpty()) return
+        sentBytes += pcm.size
+        if (sentBytes % 16_000 < pcm.size) Log.d(TAG, "uplink audio sent ${sentBytes}B")
         val encoded = Base64.getEncoder().encodeToString(pcm)
         socket.send(
             buildJsonObject {
@@ -248,5 +262,9 @@ class VoiceSession internal constructor(private val socket: WebSocket) {
     fun close() {
         runCatching { socket.send(buildJsonObject { put("type", "session.close") }.toString()) }
         socket.close(1000, "done")
+    }
+
+    private companion object {
+        const val TAG = "VoiceChat"
     }
 }

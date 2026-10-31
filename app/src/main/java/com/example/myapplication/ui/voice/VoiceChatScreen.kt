@@ -29,13 +29,13 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,10 +50,12 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.myapplication.R
+import com.example.myapplication.ui.chat.SpeechInput
+import com.example.myapplication.ui.chat.VoicePhase
 
 /**
- * 端到端实时语音对话（Seeduplex）：开始后按住说话，松手后模型直接语音回复。
- * 也可以打字发送，走同一条会话。
+ * 语音对话：优先端到端实时语音（Seeduplex）；未开通时自动降级为
+ * 豆包识别 → 对话模型 → 豆包朗读，页面功能保持一致。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,11 +66,24 @@ fun VoiceChatScreen(
     val state = viewModel.state
     val context = LocalContext.current
     var input by remember { mutableStateOf("") }
+    var voicePhase by remember { mutableStateOf(VoicePhase.Idle) }
     var localError by remember { mutableStateOf<String?>(null) }
     val permission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (!granted) localError = context.getString(R.string.need_mic_live)
+    }
+    val speech = remember {
+        SpeechInput(
+            context = context,
+            onText = { spoken -> viewModel.sendText(spoken) },
+            onPhase = { phase -> voicePhase = phase },
+            onError = { message -> localError = message },
+            recognize = viewModel::recognize,
+        )
+    }
+    DisposableEffect(speech) {
+        onDispose { speech.destroy() }
     }
 
     Scaffold(
@@ -99,10 +114,10 @@ fun VoiceChatScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = when {
-                    state.connecting -> stringResource(R.string.voice_connecting)
-                    state.connected -> stringResource(R.string.voice_hint)
-                    else -> stringResource(R.string.voice_hint)
+                text = if (state.fallback) {
+                    stringResource(R.string.voice_fallback_hint)
+                } else {
+                    stringResource(R.string.voice_hint)
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -138,7 +153,7 @@ fun VoiceChatScreen(
                 value = input,
                 onValueChange = { input = it },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text(stringResource(R.string.voice_type_hint)) },
+                placeholder = { Text(stringResource(if (state.fallback) R.string.voice_type_hint else R.string.voice_greeting_hint)) },
                 maxLines = 3,
                 enabled = state.connected,
                 trailingIcon = {
@@ -154,11 +169,13 @@ fun VoiceChatScreen(
                 },
             )
             if (state.connected) {
+                val listening = state.holding || voicePhase == VoicePhase.Listening
+                val recognizing = voicePhase == VoicePhase.Recognizing
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(76.dp)
-                        .pointerInput(state.connected) {
+                        .pointerInput(state.connected, state.fallback) {
                             detectTapGestures(
                                 onPress = {
                                     val granted = ContextCompat.checkSelfPermission(
@@ -170,17 +187,17 @@ fun VoiceChatScreen(
                                         return@detectTapGestures
                                     }
                                     localError = null
-                                    viewModel.pressStart()
+                                    if (state.fallback) speech.start("") else viewModel.pressStart()
                                     tryAwaitRelease()
-                                    viewModel.pressEnd()
+                                    if (state.fallback) speech.stop() else viewModel.pressEnd()
                                 },
                             )
                         },
                     shape = RoundedCornerShape(24.dp),
-                    color = if (state.holding) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.secondaryContainer
+                    color = when {
+                        listening -> MaterialTheme.colorScheme.primary
+                        recognizing -> MaterialTheme.colorScheme.primaryContainer
+                        else -> MaterialTheme.colorScheme.secondaryContainer
                     },
                 ) {
                     Row(
@@ -191,7 +208,13 @@ fun VoiceChatScreen(
                         Icon(Icons.Filled.Mic, contentDescription = null, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = stringResource(if (state.holding) R.string.release_to_stop else R.string.hold_to_talk),
+                            text = stringResource(
+                                when {
+                                    listening -> R.string.release_to_stop
+                                    recognizing -> R.string.recognizing
+                                    else -> R.string.hold_to_talk
+                                },
+                            ),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Medium,
                         )

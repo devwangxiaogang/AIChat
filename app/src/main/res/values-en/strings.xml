@@ -282,4 +282,6 @@
     <string name="voice_type_hint">You can also type a question</string>
     <string name="voice_need_start">Tap "Start talking" first</string>
     <string name="voice_forbidden_hint">No permission (403): make sure the project of this Speech API Key has Seeduplex enabled</string>
+    <string name="voice_fallback_hint">Realtime voice is unavailable, switched to basic voice chat (ASR → chat model → Doubao TTS)</string>
+    <string name="voice_greeting_hint">Greeting: type text for Doubao to speak</string>
 </resources>
