@@ -1,166 +1,161 @@
 package com.example.myapplication.ui.voice
 
 import android.content.Context
-import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioRecord
-import android.media.AudioTrack
-import android.media.MediaRecorder
-import android.media.audiofx.AcousticEchoCanceler
-import android.media.audiofx.NoiseSuppressor
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.myapplication.R
-import com.example.myapplication.data.remote.DoubaoVoiceChatClient
-import com.example.myapplication.data.remote.VoiceChatEvent
+import com.example.myapplication.data.SpeechReader
+import com.example.myapplication.data.remote.DoubaoAsrClient
+import com.example.myapplication.domain.LlmProvider
 import com.example.myapplication.domain.SettingsRepository
+import com.example.myapplication.domain.model.ChatRequest
 import com.example.myapplication.domain.model.ProviderId
-import com.example.myapplication.domain.model.VoiceChoice
+import com.example.myapplication.domain.model.Role
+import com.example.myapplication.domain.model.StreamEvent
+import com.example.myapplication.domain.model.WireMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class VoiceChatUiState(
-    val running: Boolean = false,
-    val connecting: Boolean = false,
+    val busy: Boolean = false,
     val userText: String = "",
-    val userPartial: String = "",
+    val partialUserText: String = "",
     val assistantText: String = "",
     val error: String? = null,
-    val speaking: Boolean = false,
 )
 
+/**
+ * 语音对话（兜底链路）：豆包识别 → DeepSeek/方舟对话 → 豆包朗读。
+ * 端到端实时语音（volc.speech.dialog）需要控制台单独开通，暂时用这条链路保证功能可用。
+ */
 @HiltViewModel
 class VoiceChatViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val settingsRepository: SettingsRepository,
-    private val client: DoubaoVoiceChatClient,
+    private val speechReader: SpeechReader,
+    private val speechRecognizer: DoubaoAsrClient,
+    private val providers: Map<ProviderId, @JvmSuppressWildcards LlmProvider>,
 ) : ViewModel() {
-    private val _state = MutableStateFlow(VoiceChatUiState())
-    val state: StateFlow<VoiceChatUiState> = _state.asStateFlow()
+    var state by mutableStateOf(VoiceChatUiState())
+        private set
 
-    private var sessionJob: Job? = null
-    private val player = PcmPlayer()
+    private var chatJob: Job? = null
 
-    fun toggle() {
-        if (_state.value.running) stop() else start()
-    }
-
-    fun start() {
-        if (_state.value.running) return
+    fun recognize(wav: ByteArray, onSuccess: (String) -> Unit, onFailure: (String) -> Unit) {
         viewModelScope.launch {
-            val config = settingsRepository.get(ProviderId.DOUBAO)
-            val apiKey = config.speechApiKey.trim()
-            val appId = config.speechAppId.trim()
-            val accessToken = config.speechAccessToken.trim()
-            if (apiKey.isEmpty() && (appId.isEmpty() || accessToken.isEmpty())) {
-                _state.update { it.copy(error = context.getString(R.string.need_speech_key)) }
-                return@launch
-            }
-            val voice = settingsRepository.speech().liveVoice
-            val speaker = (if (voice == VoiceChoice.CLONE) VoiceChoice.FEMALE else voice).speakerId
-                ?: VoiceChoice.FEMALE.speakerId
-                ?: "zh_female_vv_uranus_bigtts"
-            val channel = Channel<ByteArray>(capacity = 32)
-            _state.update {
-                it.copy(
-                    running = true,
-                    connecting = true,
-                    error = null,
-                    userText = "",
-                    userPartial = "",
-                    assistantText = "",
-                )
-            }
-            sessionJob = viewModelScope.launch(Dispatchers.IO) {
-                val captureJob = launch(Dispatchers.IO) {
-                    runCatching { capture(channel) }
-                        .onFailure { channel.close() }
+            try {
+                val config = settingsRepository.get(ProviderId.DOUBAO)
+                val apiKey = config.speechApiKey.trim()
+                val appId = config.speechAppId.trim()
+                val accessToken = config.speechAccessToken.trim()
+                if (apiKey.isEmpty() && (appId.isEmpty() || accessToken.isEmpty())) {
+                    onFailure(context.getString(R.string.asr_key_missing))
+                    return@launch
                 }
-                try {
-                    client.runSession(
+                state = state.copy(partialUserText = context.getString(R.string.recognizing))
+                onSuccess(
+                    speechRecognizer.transcribe(
                         apiKey = apiKey,
+                        wav = wav,
                         appId = appId,
                         accessToken = accessToken,
-                        speaker = speaker,
-                        botName = context.getString(R.string.voice_bot_name),
-                        audio = channel,
-                    ) { event -> handle(event) }
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    _state.update {
-                        it.copy(
-                            error = error.message?.takeIf { msg -> msg.isNotBlank() }
-                                ?: context.getString(R.string.voice_failed),
-                        )
-                    }
-                } finally {
-                    channel.close()
-                    captureJob.cancel()
-                    player.release()
-                    _state.update { it.copy(running = false, connecting = false, speaking = false) }
+                    ),
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                onFailure(error.message?.takeIf { it.isNotBlank() } ?: context.getString(R.string.asr_failed))
+            } finally {
+                state = state.copy(partialUserText = "")
+            }
+        }
+    }
+
+    /** 录音/手输的一段话，走「对话模型 + 朗读」。 */
+    fun send(text: String) {
+        val content = text.trim()
+        if (content.isEmpty()) return
+        chatJob?.cancel()
+        speechReader.stop()
+        state = state.copy(
+            busy = true,
+            error = null,
+            assistantText = "",
+            userText = appendLine(state.userText, content),
+        )
+        chatJob = viewModelScope.launch {
+            try {
+                val selected = settingsRepository.startingModel()
+                val config = settingsRepository.get(selected.provider)
+                if (config.apiKey.isBlank()) {
+                    state = state.copy(busy = false, error = context.getString(R.string.error_api_key_invalid))
+                    return@launch
                 }
+                val llm = providers[selected.provider]
+                if (llm == null) {
+                    state = state.copy(busy = false, error = context.getString(R.string.voice_failed))
+                    return@launch
+                }
+                var reply = ""
+                llm.stream(
+                    apiKey = config.apiKey,
+                    baseUrl = config.baseUrl,
+                    request = ChatRequest(
+                        model = selected.model,
+                        messages = listOf(WireMessage(Role.USER, content)),
+                    ),
+                ).catch { error ->
+                    state = state.copy(
+                        busy = false,
+                        error = error.message?.takeIf { it.isNotBlank() } ?: context.getString(R.string.voice_failed),
+                    )
+                }.collect { event ->
+                    when (event) {
+                        is StreamEvent.Delta -> {
+                            reply += event.text
+                            state = state.copy(assistantText = reply)
+                        }
+                        is StreamEvent.Failed -> {
+                            state = state.copy(busy = false, error = event.message)
+                        }
+                        else -> Unit
+                    }
+                }
+                state = state.copy(busy = false)
+                if (reply.isNotBlank()) {
+                    speechReader.toggle(viewModelScope, "voice-chat", reply) { failure ->
+                        state = state.copy(error = failure.message)
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                state = state.copy(
+                    busy = false,
+                    error = error.message?.takeIf { it.isNotBlank() } ?: context.getString(R.string.voice_failed),
+                )
             }
         }
     }
 
     fun stop() {
-        sessionJob?.cancel()
-        sessionJob = null
-        player.release()
-        _state.update { it.copy(running = false, connecting = false, speaking = false) }
+        chatJob?.cancel()
+        chatJob = null
+        speechReader.stop()
+        state = state.copy(busy = false)
     }
 
-    private fun handle(event: VoiceChatEvent) {
-        when (event) {
-            VoiceChatEvent.Connected, VoiceChatEvent.SessionStarted -> {
-                _state.update { it.copy(connecting = false) }
-            }
-            is VoiceChatEvent.UserText -> {
-                if (event.final) {
-                    _state.update {
-                        it.copy(
-                            userText = appendLine(it.userText, event.text),
-                            userPartial = "",
-                        )
-                    }
-                } else {
-                    _state.update { it.copy(userPartial = event.text) }
-                }
-            }
-            is VoiceChatEvent.AssistantText -> {
-                _state.update { it.copy(assistantText = appendLine(it.assistantText, event.text)) }
-            }
-            is VoiceChatEvent.Audio -> {
-                player.write(event.pcm)
-                _state.update { it.copy(speaking = true) }
-            }
-            VoiceChatEvent.UserSpeaking -> {
-                // 用户插话：立刻停止本地播报，交给服务端重新生成。
-                player.flush()
-                _state.update { it.copy(speaking = false, userPartial = "") }
-            }
-            VoiceChatEvent.Ended -> {
-                _state.update { it.copy(running = false, connecting = false, speaking = false) }
-            }
-            is VoiceChatEvent.Failed -> {
-                _state.update {
-                    it.copy(running = false, connecting = false, speaking = false, error = event.message)
-                }
-            }
-        }
+    fun clear() {
+        stop()
+        state = VoiceChatUiState()
     }
 
     private fun appendLine(current: String, incoming: String): String {
@@ -169,125 +164,8 @@ class VoiceChatViewModel @Inject constructor(
         return if (current.isEmpty()) line else "$current\n$line"
     }
 
-    private suspend fun capture(channel: Channel<ByteArray>) {
-        val min = AudioRecord.getMinBufferSize(
-            SAMPLE_RATE,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-        )
-        val record = AudioRecord(
-            MediaRecorder.AudioSource.VOICE_COMMUNICATION,
-            SAMPLE_RATE,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-            min.coerceAtLeast(FRAME_BYTES * 2),
-        )
-        if (record.state != AudioRecord.STATE_INITIALIZED) {
-            record.release()
-            _state.update { it.copy(error = context.getString(R.string.mic_unavailable)) }
-            return
-        }
-        val echo = AcousticEchoCanceler.create(record.audioSessionId)?.also { it.enabled = true }
-        val noise = NoiseSuppressor.create(record.audioSessionId)?.also { it.enabled = true }
-        try {
-            record.startRecording()
-            val buffer = ByteArray(FRAME_BYTES)
-            while (currentCoroutineContext().isActive && !channel.isClosedForSend) {
-                val read = record.read(buffer, 0, buffer.size)
-                if (read > 0) {
-                    val chunk = buffer.copyOf(read)
-                    try {
-                        channel.send(chunk)
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (_: Exception) {
-                        break
-                    }
-                }
-            }
-        } finally {
-            runCatching {
-                record.stop()
-                record.release()
-            }
-            runCatching { echo?.release() }
-            runCatching { noise?.release() }
-        }
-    }
-
     override fun onCleared() {
-        sessionJob?.cancel()
-        player.release()
-    }
-
-    /** 24kHz / 单声道 / 16bit 的 PCM 播放器，收到就写。 */
-    private class PcmPlayer {
-        private val lock = Any()
-        private var track: AudioTrack? = null
-        private var released = false
-
-        fun write(pcm: ByteArray) {
-            synchronized(lock) {
-                if (released || pcm.isEmpty()) return
-                val current = track ?: AudioTrack.Builder()
-                    .setAudioAttributes(
-                        AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_MEDIA)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                            .build(),
-                    )
-                    .setAudioFormat(
-                        AudioFormat.Builder()
-                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                            .setSampleRate(SAMPLE_RATE)
-                            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                            .build(),
-                    )
-                    .setBufferSizeInBytes(
-                        AudioTrack.getMinBufferSize(
-                            SAMPLE_RATE,
-                            AudioFormat.CHANNEL_OUT_MONO,
-                            AudioFormat.ENCODING_PCM_16BIT,
-                        ).coerceAtLeast(SAMPLE_RATE),
-                    )
-                    .setTransferMode(AudioTrack.MODE_STREAM)
-                    .build()
-                    .also {
-                        it.play()
-                        track = it
-                    }
-                current.write(pcm, 0, pcm.size)
-            }
-        }
-
-        fun flush() {
-            synchronized(lock) {
-                runCatching {
-                    track?.pause()
-                    track?.flush()
-                    track?.play()
-                }
-            }
-        }
-
-        fun release() {
-            synchronized(lock) {
-                if (released) return
-                released = true
-                runCatching {
-                    track?.pause()
-                    track?.flush()
-                    track?.stop()
-                }
-                runCatching { track?.release() }
-                track = null
-            }
-        }
-    }
-
-    private companion object {
-        const val SAMPLE_RATE = 16_000
-        /** 20ms 一帧：16000 × 0.02 × 2 字节。 */
-        const val FRAME_BYTES = 640
+        chatJob?.cancel()
+        speechReader.stop()
     }
 }

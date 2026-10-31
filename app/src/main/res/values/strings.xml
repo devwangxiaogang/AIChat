@@ -279,4 +279,5 @@
     <string name="backup_export_done">已导出 %1$d 个会话</string>
     <string name="backup_import_done">已导入 %1$d 个会话</string>
     <string name="backup_failed">备份失败（%1$s）</string>
+    <string name="voice_type_hint">也可以打字提问</string>
 </resources>
