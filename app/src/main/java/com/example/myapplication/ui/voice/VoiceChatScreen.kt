@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -181,7 +182,13 @@ fun VoiceChatScreen(
         animationSpec = tween(120),
         label = "voiceLevel",
     )
-    BackHandler { if (state.connected || state.connecting) viewModel.stopSession() else onBack() }
+    BackHandler {
+        when {
+            showTextInput -> showTextInput = false
+            state.connected || state.connecting -> viewModel.stopSession()
+            else -> onBack()
+        }
+    }
     LaunchedEffect(state.userText, state.assistantText, state.partialUserText, state.error) {
         val last = listState.layoutInfo.totalItemsCount - 1
         if (last >= 0) listState.animateScrollToItem(last)
@@ -212,6 +219,7 @@ fun VoiceChatScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .safeDrawingPadding()
+                .imePadding()
                 .padding(horizontal = 18.dp),
         ) {
             // 顶栏：标题 + 状态 + 结束
@@ -352,7 +360,7 @@ fun VoiceChatScreen(
                         }
                     }
                     if (state.assistantText.isNotBlank()) {
-                        item { Bubble(stringResource(R.string.voice_assistant), state.assistantText, mine = false, palette = palette) }
+                        item { Bubble(stringResource(R.string.voice_assistant), state.assistantText, mine = false, streaming = state.speaking, palette = palette) }
                     }
                     if (state.connecting) {
                         item {
