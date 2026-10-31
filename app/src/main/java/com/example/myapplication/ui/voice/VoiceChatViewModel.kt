@@ -149,11 +149,21 @@ class VoiceChatViewModel @Inject constructor(
     }
 
     fun setVoice(voice: VoiceChoice) {
-        state = state.copy(voice = if (voice == VoiceChoice.CLONE) VoiceChoice.FEMALE else voice)
+        val normalized = if (voice == VoiceChoice.CLONE) VoiceChoice.FEMALE else voice
+        state = state.copy(voice = normalized)
+        applyAudioSettings()
     }
 
     fun setSpeed(speed: Int) {
         state = state.copy(speed = speed.coerceIn(-50, 100))
+    }
+
+    /** 已连接时把音色/语速热更新到当前会话（session.update），无需重新开始。 */
+    fun applyAudioSettings() {
+        val current = session ?: return
+        if (state.fallback) return
+        val speaker = (if (state.voice == VoiceChoice.CLONE) VoiceChoice.FEMALE else state.voice).ttsSpeakerId
+        current.updateAudio(speaker, state.speed)
     }
 
     private fun startTicker() {

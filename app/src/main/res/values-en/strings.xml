@@ -295,4 +295,5 @@
     <string name="voice_settings_next">Takes effect next time you start</string>
     <string name="voice_settings_done">Done</string>
     <string name="voice_copy_done">Copied</string>
+    <string name="voice_settings_applied">Applied live</string>
 </resources>

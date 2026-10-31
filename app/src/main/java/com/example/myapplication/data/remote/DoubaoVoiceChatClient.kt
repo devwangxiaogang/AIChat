@@ -96,6 +96,7 @@ class DoubaoVoiceChatClient @Inject constructor(
             override fun onMessage(webSocket: WebSocket, text: String) {
                 val obj = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return
                 when (val type = obj["type"]?.jsonPrimitive?.contentOrNull.orEmpty()) {
+                    "session.updated" -> Log.d(TAG, "session.updated")
                     "session.created" -> {
                         Log.d(TAG, "session.created")
                         ready.complete(Unit)
@@ -234,6 +235,35 @@ class VoiceSession internal constructor(private val socket: WebSocket) {
     }
 
     /** 松开后强制判停，让模型立刻开始回应。 */
+    /** 不挂断直接切换音色/语速（session.update）。 */
+    fun updateAudio(voice: String, speed: Int) {
+        socket.send(
+            buildJsonObject {
+                put("type", "session.update")
+                putJsonObject("session") {
+                    put("model", "1.2.6.1")
+                    putJsonObject("audio") {
+                        putJsonObject("input") {
+                            putJsonObject("format") {
+                                put("type", "pcm")
+                                put("rate", 16_000)
+                            }
+                        }
+                        putJsonObject("output") {
+                            putJsonObject("format") {
+                                put("type", "pcm_s16le")
+                                put("rate", 24_000)
+                            }
+                            put("voice", voice)
+                            put("speed", speed)
+                            put("loudness", 0)
+                        }
+                    }
+                }
+            }.toString(),
+        )
+    }
+
     fun commitAudio() {
         socket.send(buildJsonObject { put("type", "input_audio_buffer.commit") }.toString())
     }

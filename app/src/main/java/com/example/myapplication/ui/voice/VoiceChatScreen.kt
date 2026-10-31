@@ -344,6 +344,7 @@ fun VoiceChatScreen(
             connected = state.connected,
             onVoice = viewModel::setVoice,
             onSpeed = viewModel::setSpeed,
+            onApply = viewModel::applyAudioSettings,
             onDismiss = { showSettings = false },
         )
     }
@@ -539,6 +540,7 @@ private fun VoiceSettingsSheet(
     connected: Boolean,
     onVoice: (VoiceChoice) -> Unit,
     onSpeed: (Int) -> Unit,
+    onApply: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = CardBgSoft) {
@@ -576,6 +578,7 @@ private fun VoiceSettingsSheet(
             Slider(
                 value = speed.toFloat(),
                 onValueChange = { onSpeed(it.toInt()) },
+                onValueChangeFinished = { onApply() },
                 valueRange = -50f..100f,
                 steps = 14,
                 colors = SliderDefaults.colors(
@@ -585,7 +588,7 @@ private fun VoiceSettingsSheet(
                 ),
             )
             if (connected) {
-                Text(stringResource(R.string.voice_settings_next), color = Color(0xFFFFC46B), fontSize = 12.sp)
+                Text(stringResource(R.string.voice_settings_applied), color = Online, fontSize = 12.sp)
             }
             Button(
                 onClick = onDismiss,
