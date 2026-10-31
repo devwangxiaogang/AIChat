@@ -31,6 +31,7 @@ import com.example.myapplication.domain.model.StreamEvent
 import com.example.myapplication.domain.model.ToolCallRequest
 import com.example.myapplication.domain.model.WireMessage
 import com.example.myapplication.domain.model.historyStartIndex
+import com.example.myapplication.domain.model.overlayStreaming
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -68,6 +69,9 @@ class ChatRepositoryImpl @Inject constructor(
     private val jobs = ConcurrentHashMap<Long, Job>()
     private val activeIds = MutableStateFlow<Set<Long>>(emptySet())
 
+    /** 正在生成中的正文只留在内存里，避免每个 token 都写一次数据库。 */
+    private val streaming = MutableStateFlow<Map<Long, StreamingText>>(emptyMap())
+
     override fun observeConversations(): Flow<List<Conversation>> =
         conversationDao.observeAll().map { rows -> rows.map { it.toDomain() } }
 
@@ -78,10 +82,16 @@ class ChatRepositoryImpl @Inject constructor(
         combine(
             messageDao.observe(conversationId),
             attachmentDao.observeForConversation(conversationId),
-        ) { messages, attachments ->
+            streaming.map { it[conversationId] }.distinctUntilChanged(),
+        ) { messages, attachments, live ->
             val byMessage = attachments.groupBy { it.messageId }
-            messages.map { row ->
+            val snapshot = messages.map { row ->
                 row.toDomain(byMessage[row.id].orEmpty().map { it.toDomain() })
+            }
+            if (live == null) {
+                snapshot
+            } else {
+                snapshot.overlayStreaming(live.messageId, live.content, live.reasoning)
             }
         }
 
@@ -343,6 +353,7 @@ class ChatRepositoryImpl @Inject constructor(
             val llm = providers[provider]
                 ?: error(context.getString(R.string.provider_missing, context.getString(provider.nameRes)))
             var lastFlush = 0L
+            var lastStream = 0L
             var pendingTools: List<ToolCallRequest> = emptyList()
             llm.stream(
                 apiKey = config.apiKey,
@@ -352,10 +363,24 @@ class ChatRepositoryImpl @Inject constructor(
                 when (event) {
                     is StreamEvent.Delta -> {
                         content += event.text
+                        lastStream = publishStreaming(
+                            conversationId = conversation.id,
+                            messageId = assistantId,
+                            content = content,
+                            reasoning = reasoning,
+                            lastPublish = lastStream,
+                        )
                         lastFlush = flush(assistantId, content, reasoning, lastFlush, force = false)
                     }
                     is StreamEvent.Reasoning -> {
                         reasoning += event.text
+                        lastStream = publishStreaming(
+                            conversationId = conversation.id,
+                            messageId = assistantId,
+                            content = content,
+                            reasoning = reasoning,
+                            lastPublish = lastStream,
+                        )
                         lastFlush = flush(assistantId, content, reasoning, lastFlush, force = false)
                     }
                     is StreamEvent.ToolCalls -> pendingTools = event.calls
@@ -402,6 +427,9 @@ class ChatRepositoryImpl @Inject constructor(
                     error.message ?: context.getString(R.string.request_failed),
                 )
             }
+        } finally {
+            // 收尾后以数据库为准；这里只清理内存里的流式副本。
+            streaming.update { it - conversation.id }
         }
     }
 
@@ -643,6 +671,26 @@ class ChatRepositoryImpl @Inject constructor(
         return now
     }
 
+    /** 把最新正文推到内存流；节流到几十毫秒，避免每个 token 都触发一次重组。 */
+    private fun publishStreaming(
+        conversationId: Long,
+        messageId: Long,
+        content: String,
+        reasoning: String,
+        lastPublish: Long,
+    ): Long {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastPublish < STREAM_INTERVAL_MS) return lastPublish
+        streaming.update { it + (conversationId to StreamingText(messageId, content, reasoning)) }
+        return now
+    }
+
+    private data class StreamingText(
+        val messageId: Long,
+        val content: String,
+        val reasoning: String,
+    )
+
     /**
      * 空标题表示还没自动命名。旧版本把本地化的「新对话」写进了库，
      * 读出来时统一归一成空串，避免换系统语言后标题还是旧语言。
@@ -691,7 +739,10 @@ class ChatRepositoryImpl @Inject constructor(
         private const val IMAGE_HISTORY_LIMIT = 4
         /** 历史附图 base64 后的总字符预算（约 4.5 MB 原始数据）。 */
         private const val IMAGE_HISTORY_CHARS = 6_000_000L
-        private const val FLUSH_INTERVAL_MS = 100L
+        /** 数据库兜底落盘间隔：正文平时只在内存里，进程被杀最多回退这么多内容。 */
+        private const val FLUSH_INTERVAL_MS = 1_000L
+        /** 内存流式文本的界面刷新间隔。 */
+        private const val STREAM_INTERVAL_MS = 60L
         private const val LEGACY_NEW_CHAT_ZH = "新对话"
         private const val LEGACY_NEW_CHAT_EN = "New chat"
         private val DRAW_PATTERNS = listOf(

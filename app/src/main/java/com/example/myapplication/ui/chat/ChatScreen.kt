@@ -180,9 +180,14 @@ fun ChatScreen(
         }
     }
     val tail = state.messages.lastOrNull()
+    var previousCount by remember { mutableStateOf(0) }
     LaunchedEffect(state.messages.size, tail?.content?.length, tail?.reasoning?.length, tail?.attachments?.size) {
-        // 只在已经停在底部时跟随输出；用户上滑看历史时不要抢滚动位置。
-        if (state.messages.isNotEmpty() && !listState.canScrollBackward) {
+        val grew = state.messages.size > previousCount
+        previousCount = state.messages.size
+        if (state.messages.isEmpty()) return@LaunchedEffect
+        // 新增消息（尤其是自己刚发的）总是跳到最新；只有同一段流式输出增长时，
+        // 才在用户已经停在底部的情况下跟随，避免上滑看历史被拽走。
+        if (grew || !listState.canScrollBackward) {
             listState.animateScrollToItem(0)
         }
     }
