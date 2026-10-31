@@ -17,7 +17,6 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,6 +26,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -39,13 +40,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -63,15 +62,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -84,19 +85,62 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
 
-private val BgTop = Color(0xFF0B1220)
-private val BgBottom = Color(0xFF16233F)
-private val CardBg = Color(0xFF1B2440)
-private val CardBgSoft = Color(0xFF212B4A)
-private val Accent = Color(0xFF7C87FF)
-private val AccentDeep = Color(0xFF5B6CFF)
-private val TextMain = Color(0xFFF2F5FF)
-private val TextDim = Color(0xFF9AA6C8)
-private val Online = Color(0xFF34D399)
+/** 语音页配色随主题切换：浅色暖白 + 靛紫光晕，深色深空蓝 + 靛紫光晕。 */
+private data class VoicePalette(
+    val bgTop: Color,
+    val bgBottom: Color,
+    val glow: Color,
+    val card: Color,
+    val cardSoft: Color,
+    val accent: Color,
+    val accentDeep: Color,
+    val text: Color,
+    val textDim: Color,
+    val online: Color,
+    val border: Color,
+    val isDark: Boolean,
+)
+
+@Composable
+private fun rememberVoicePalette(): VoicePalette {
+    val cs = MaterialTheme.colorScheme
+    val dark = cs.background.luminance() < 0.5f
+    return if (dark) {
+        VoicePalette(
+            bgTop = cs.background,
+            bgBottom = cs.surfaceContainer,
+            glow = cs.primary,
+            card = cs.surface,
+            cardSoft = cs.surfaceContainerHigh,
+            accent = cs.primary,
+            accentDeep = cs.primary,
+            text = cs.onBackground,
+            textDim = cs.onSurfaceVariant,
+            online = Color(0xFF4ADE80),
+            border = cs.outline,
+            isDark = true,
+        )
+    } else {
+        VoicePalette(
+            bgTop = cs.background,
+            bgBottom = lerp(cs.background, cs.primaryContainer, 0.55f),
+            glow = cs.primary,
+            card = cs.surface,
+            cardSoft = cs.surfaceContainerHigh,
+            accent = cs.primary,
+            accentDeep = cs.primary,
+            text = cs.onBackground,
+            textDim = cs.onSurfaceVariant,
+            online = Color(0xFF0E9F6E),
+            border = cs.outline,
+            isDark = false,
+        )
+    }
+}
 
 /**
- * 语音对话（融合版）：暗色沉浸背景 + 卡片式对话流 + 声波/光环动效。
- * 支持实时语音（Seeduplex）、自动降级、音色/语速、长按复制、通话时长。
+ * 语音对话页（光球 · 电话感）：
+ * 顶部状态 + 中央光球 + 字幕层 + 底部按住说话，主题自适应。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -105,11 +149,13 @@ fun VoiceChatScreen(
     viewModel: VoiceChatViewModel = hiltViewModel(),
 ) {
     val state = viewModel.state
+    val palette = rememberVoicePalette()
     val context = LocalContext.current
     var input by remember { mutableStateOf("") }
     var voicePhase by remember { mutableStateOf(VoicePhase.Idle) }
     var localError by remember { mutableStateOf<String?>(null) }
     var showSettings by remember { mutableStateOf(false) }
+    var showTextInput by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val permission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -129,7 +175,6 @@ fun VoiceChatScreen(
         onDispose { speech.destroy() }
     }
     val speakingNow = state.holding || state.speaking || voicePhase == VoicePhase.Listening
-    // 语音是底部 Tab：返回键在通话中先挂断，未通话时离开该 Tab。
     BackHandler { if (state.connected || state.connecting) viewModel.stopSession() else onBack() }
     LaunchedEffect(state.userText, state.assistantText, state.partialUserText, state.error) {
         val last = listState.layoutInfo.totalItemsCount - 1
@@ -139,161 +184,218 @@ fun VoiceChatScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(BgTop, BgBottom))),
+            .background(Brush.verticalGradient(listOf(palette.bgTop, palette.bgBottom))),
     ) {
+        // 顶部光晕，给光球一个落点
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(520.dp),
+        ) {
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(palette.glow.copy(alpha = if (palette.isDark) 0.16f else 0.10f), Color.Transparent),
+                    center = Offset(size.width / 2f, size.height * 0.52f),
+                    radius = size.width * 0.62f,
+                ),
+                radius = size.width * 0.62f,
+                center = Offset(size.width / 2f, size.height * 0.52f),
+            )
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .safeDrawingPadding()
                 .padding(horizontal = 18.dp),
         ) {
-            // 顶栏
+            // 顶栏：标题 + 状态 + 结束
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     stringResource(R.string.voice_chat_title),
-                    color = TextMain,
-                    fontSize = 19.sp,
+                    color = palette.text,
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Spacer(Modifier.weight(1f))
-                StatusChip(connected = state.connected, connecting = state.connecting)
+                StatusChip(connected = state.connected, connecting = state.connecting, palette = palette)
                 if (state.connected) {
                     IconButton(onClick = viewModel::stopSession) {
-                        Icon(Icons.Filled.Stop, contentDescription = stringResource(R.string.voice_stop), tint = Color(0xFFFF8B95))
+                        Icon(
+                            Icons.Filled.Stop,
+                            contentDescription = stringResource(R.string.voice_stop),
+                            tint = Color(0xFFFF6B81),
+                        )
                     }
                 }
             }
-            Spacer(Modifier.height(6.dp))
-            // 状态头：光环 + 状态 + 通话时长 + 设置
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                VoiceOrb(active = speakingNow, connected = state.connected)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = statusText(state, voicePhase),
-                        color = TextMain,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Text(
-                        text = if (state.connected) {
-                            stringResource(R.string.voice_duration, formatDuration(state.durationSec))
-                        } else {
-                            stringResource(R.string.voice_offline_hint)
-                        },
-                        color = TextDim,
-                        fontSize = 12.sp,
-                    )
-                }
-                IconButton(onClick = { showSettings = true }) {
-                    Icon(Icons.Filled.Tune, contentDescription = stringResource(R.string.voice_settings_title), tint = TextDim)
-                }
-            }
-            if (state.fallback) {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 6.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    color = Color(0xFF3A2E1A),
+
+            if (!state.connected) {
+                Spacer(Modifier.weight(1f))
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
+                    VoiceOrb(active = false, connected = false, size = 148.dp, palette = palette)
+                    Spacer(Modifier.height(18.dp))
                     Text(
-                        stringResource(R.string.voice_fallback_hint),
-                        color = Color(0xFFFFC46B),
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        stringResource(R.string.voice_idle_title),
+                        color = palette.text,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        stringResource(R.string.voice_idle_subtitle),
+                        color = palette.textDim,
+                        fontSize = 13.sp,
                     )
                 }
-            }
-            // 对话流
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(vertical = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                if (state.userText.isNotBlank()) {
-                    item { Bubble(stringResource(R.string.voice_you), state.userText, mine = true) }
+                (state.error ?: localError)?.let { error ->
+                    Spacer(Modifier.height(14.dp))
+                    com.example.myapplication.ui.components.ErrorCard(
+                        message = error,
+                        onRetry = {
+                            localError = null
+                            viewModel.startSession()
+                        },
+                    )
                 }
-                if (state.partialUserText.isNotBlank()) {
-                    item { Bubble(stringResource(R.string.voice_you), state.partialUserText, mine = true, streaming = true) }
+                Spacer(Modifier.weight(1f))
+                StartButton(connecting = state.connecting, palette = palette) { viewModel.startSession() }
+                Spacer(Modifier.height(12.dp))
+                QuickChips(
+                    state = state,
+                    palette = palette,
+                    onOpenSettings = { showSettings = true },
+                    onToggleText = { showTextInput = !showTextInput },
+                )
+            } else {
+                Spacer(Modifier.height(6.dp))
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    VoiceOrb(active = speakingNow, connected = true, size = 96.dp, palette = palette)
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        statusText(state, voicePhase),
+                        color = palette.text,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        stringResource(R.string.voice_duration, formatDuration(state.durationSec)),
+                        color = palette.textDim,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
                 }
-                if (state.assistantText.isNotBlank()) {
-                    item { Bubble(stringResource(R.string.voice_assistant), state.assistantText, mine = false) }
-                }
-                if (state.connecting) {
-                    item {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Accent)
-                            Spacer(Modifier.width(8.dp))
-                            Text(stringResource(R.string.voice_connecting), color = TextDim, fontSize = 13.sp)
-                        }
+                if (state.fallback) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (palette.isDark) Color(0xFF3A2E1A) else Color(0xFFFFF4E0),
+                    ) {
+                        Text(
+                            stringResource(R.string.voice_fallback_hint),
+                            color = if (palette.isDark) Color(0xFFFFC46B) else Color(0xFF8A5A00),
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        )
                     }
                 }
-                val error = state.error ?: localError
-                if (error != null) {
-                    item {
-                        Surface(shape = RoundedCornerShape(16.dp), color = Color(0xFF3A1F26), modifier = Modifier.fillMaxWidth()) {
-                            Text(
-                                error,
-                                color = Color(0xFFFF9AA8),
-                                fontSize = 13.sp,
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    if (state.userText.isNotBlank()) {
+                        item { Bubble(stringResource(R.string.voice_you), state.userText, mine = true, palette = palette) }
+                    }
+                    if (state.partialUserText.isNotBlank()) {
+                        item {
+                            Bubble(
+                                stringResource(R.string.voice_you),
+                                state.partialUserText,
+                                mine = true,
+                                streaming = true,
+                                palette = palette,
                             )
                         }
                     }
-                }
-                item { Spacer(Modifier.height(4.dp)) }
-            }
-            // 声波（仅通话中显示）
-            if (state.connected) Waveform(active = speakingNow)
-            // 打招呼输入
-            if (state.connected) {
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = input,
-                    onValueChange = { input = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = {
-                        Text(
-                            stringResource(if (state.fallback) R.string.voice_type_hint else R.string.voice_greeting_hint),
-                            color = TextDim,
-                            fontSize = 13.sp,
-                        )
-                    },
-                    maxLines = 2,
-                    shape = RoundedCornerShape(20.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = TextMain,
-                        unfocusedTextColor = TextMain,
-                        focusedBorderColor = Accent,
-                        unfocusedBorderColor = Color(0xFF2A3556),
-                        cursorColor = Accent,
-                    ),
-                    trailingIcon = {
-                        IconButton(
-                            onClick = {
-                                viewModel.sendText(input)
-                                input = ""
-                            },
-                            enabled = input.isNotBlank(),
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.send), tint = Accent)
+                    if (state.assistantText.isNotBlank()) {
+                        item { Bubble(stringResource(R.string.voice_assistant), state.assistantText, mine = false, palette = palette) }
+                    }
+                    if (state.connecting) {
+                        item {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = palette.accent)
+                                Spacer(Modifier.width(8.dp))
+                                Text(stringResource(R.string.voice_connecting), color = palette.textDim, fontSize = 13.sp)
+                            }
                         }
-                    },
-                )
-            }
-            Spacer(Modifier.height(10.dp))
-            // 主操作
-            if (state.connected) {
+                    }
+                    val error = state.error ?: localError
+                    if (error != null) {
+                        item {
+                            com.example.myapplication.ui.components.ErrorCard(
+                                message = error,
+                                onRetry = { localError = null },
+                            )
+                        }
+                    }
+                    item { Spacer(Modifier.height(2.dp)) }
+                }
+                Waveform(active = speakingNow, palette = palette)
+                if (showTextInput) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = input,
+                        onValueChange = { input = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = {
+                            Text(
+                                stringResource(if (state.fallback) R.string.voice_type_hint else R.string.voice_greeting_hint),
+                                color = palette.textDim,
+                                fontSize = 13.sp,
+                            )
+                        },
+                        maxLines = 2,
+                        shape = RoundedCornerShape(20.dp),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = ImeAction.Send),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = palette.text,
+                            unfocusedTextColor = palette.text,
+                            focusedBorderColor = palette.accent,
+                            unfocusedBorderColor = palette.border,
+                            cursorColor = palette.accent,
+                        ),
+                        trailingIcon = {
+                            IconButton(
+                                onClick = {
+                                    viewModel.sendText(input)
+                                    input = ""
+                                },
+                                enabled = input.isNotBlank(),
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.send), tint = palette.accent)
+                            }
+                        },
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
                 HoldButton(
                     listening = state.holding || voicePhase == VoicePhase.Listening,
                     recognizing = voicePhase == VoicePhase.Recognizing,
+                    palette = palette,
                     onPress = {
                         val granted = ContextCompat.checkSelfPermission(
                             context,
@@ -312,27 +414,27 @@ fun VoiceChatScreen(
                         if (state.fallback) speech.stop() else viewModel.pressEnd()
                     },
                 )
-            } else {
-                Button(
-                    onClick = viewModel::startSession,
-                    enabled = !state.connecting,
+                Text(
+                    stringResource(
+                        if (state.holding || voicePhase == VoicePhase.Listening) R.string.voice_hold_hint
+                        else R.string.voice_interrupt_hint,
+                    ),
+                    color = palette.textDim,
+                    fontSize = 12.sp,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(60.dp),
-                    shape = RoundedCornerShape(30.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = AccentDeep, contentColor = TextMain),
-                ) {
-                    if (state.connecting) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = TextMain)
-                        Spacer(Modifier.width(8.dp))
-                    }
-                    Text(
-                        stringResource(if (state.connecting) R.string.voice_connecting else R.string.voice_start),
-                        fontSize = 16.sp,
-                    )
-                }
+                        .padding(top = 8.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+                Spacer(Modifier.height(10.dp))
+                QuickChips(
+                    state = state,
+                    palette = palette,
+                    onOpenSettings = { showSettings = true },
+                    onToggleText = { showTextInput = !showTextInput },
+                )
             }
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(12.dp))
         }
     }
 
@@ -341,6 +443,7 @@ fun VoiceChatScreen(
             voice = state.voice,
             speed = state.speed,
             connected = state.connected,
+            palette = palette,
             onVoice = viewModel::setVoice,
             onSpeed = viewModel::setSpeed,
             onApply = viewModel::applyAudioSettings,
@@ -350,32 +453,28 @@ fun VoiceChatScreen(
 }
 
 @Composable
-private fun StatusChip(connected: Boolean, connecting: Boolean) {
-    val color = when {
-        connected -> Color(0xFF16352C)
-        connecting -> Color(0xFF2A2F1C)
-        else -> Color(0xFF252C45)
-    }
+private fun StatusChip(connected: Boolean, connecting: Boolean, palette: VoicePalette) {
     val dot = when {
-        connected -> Online
+        connected -> palette.online
         connecting -> Color(0xFFFFC46B)
-        else -> TextDim
+        else -> palette.textDim
+    }
+    val bg = when {
+        connected -> palette.online.copy(alpha = 0.14f)
+        connecting -> Color(0xFFFFC46B).copy(alpha = 0.16f)
+        else -> palette.cardSoft
     }
     val label = when {
         connected -> stringResource(R.string.voice_status_connected)
         connecting -> stringResource(R.string.voice_status_connecting)
         else -> stringResource(R.string.voice_status_offline)
     }
-    Surface(shape = RoundedCornerShape(20.dp), color = color) {
+    Surface(shape = RoundedCornerShape(20.dp), color = bg) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                Modifier
-                    .size(6.dp)
-                    .background(dot, CircleShape),
-            )
+            Box(Modifier.size(6.dp).background(dot, CircleShape))
             Spacer(Modifier.width(6.dp))
             Text(label, color = dot, fontSize = 11.sp)
         }
@@ -383,7 +482,7 @@ private fun StatusChip(connected: Boolean, connecting: Boolean) {
 }
 
 @Composable
-private fun VoiceOrb(active: Boolean, connected: Boolean) {
+private fun VoiceOrb(active: Boolean, connected: Boolean, size: Dp, palette: VoicePalette) {
     val transition = rememberInfiniteTransition(label = "orb")
     val pulse by transition.animateFloat(
         initialValue = 0f,
@@ -391,21 +490,50 @@ private fun VoiceOrb(active: Boolean, connected: Boolean) {
         animationSpec = infiniteRepeatable(animation = tween(1400), repeatMode = RepeatMode.Restart),
         label = "pulse",
     )
-    Box(Modifier.size(58.dp), contentAlignment = Alignment.Center) {
+    val barPhase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(animation = tween(1100, easing = LinearEasing), repeatMode = RepeatMode.Restart),
+        label = "barPhase",
+    )
+    Box(Modifier.size(size), contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
-            val r = size.minDimension / 2f
+            val r = this.size.minDimension / 2f
             if (active && connected) {
-                drawCircle(Accent.copy(alpha = 0.30f * (1f - pulse)), radius = r * (0.55f + 0.45f * pulse))
-                drawCircle(Accent.copy(alpha = 0.18f * (1f - pulse)), radius = r * (0.70f + 0.30f * pulse))
+                drawCircle(palette.accent.copy(alpha = 0.28f * (1f - pulse)), radius = r * (0.55f + 0.45f * pulse))
+                drawCircle(palette.accent.copy(alpha = 0.16f * (1f - pulse)), radius = r * (0.72f + 0.28f * pulse))
+            } else {
+                drawCircle(palette.accent.copy(alpha = 0.10f), radius = r * 0.95f)
             }
-            drawCircle(if (connected) Color(0xFF6C7BFF) else Color(0xFF2A3556), radius = r * 0.62f)
+            drawCircle(palette.accent, radius = r * 0.64f)
+            drawCircle(Color.White.copy(alpha = 0.14f), radius = r * 0.60f)
+            // 音量条
+            val bars = 7
+            val centerY = this.size.height * 0.66f
+            for (i in 0 until bars) {
+                val wave = abs(sin(barPhase * 2f * PI.toFloat() + i * 0.9f))
+                val h = r * (0.10f + 0.22f * wave) * (if (active) 1.4f else 0.9f)
+                val x = this.size.width / 2f + (i - (bars - 1) / 2f) * r * 0.16f
+                drawRoundRect(
+                    color = Color.White.copy(alpha = 0.92f),
+                    topLeft = Offset(x - r * 0.035f, centerY - h / 2f),
+                    size = androidx.compose.ui.geometry.Size(r * 0.07f, h),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(r * 0.035f),
+                )
+            }
         }
-        Text("豆包", color = TextMain, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            stringResource(R.string.voice_assistant),
+            color = Color.White,
+            fontSize = if (size > 120.dp) 20.sp else 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.offset(y = -(size * 0.10f)),
+        )
     }
 }
 
 @Composable
-private fun Waveform(active: Boolean) {
+private fun Waveform(active: Boolean, palette: VoicePalette) {
     val transition = rememberInfiniteTransition(label = "wave")
     val phase by transition.animateFloat(
         initialValue = 0f,
@@ -414,21 +542,21 @@ private fun Waveform(active: Boolean) {
         label = "phase",
     )
     Canvas(
-        Modifier
+        modifier = Modifier
             .fillMaxWidth()
-            .height(44.dp),
+            .height(38.dp),
     ) {
         val count = 30
         val gap = size.width / count
         for (i in 0 until count) {
             val wave = abs(sin(phase * 2f * PI.toFloat() + i * 0.55f))
-            val amp = if (active) 0.22f + 0.78f * wave else 0.10f + 0.12f * wave
+            val amp = if (active) 0.22f + 0.78f * wave else 0.08f + 0.10f * wave
             val h = size.height * amp
             drawRoundRect(
-                color = Accent.copy(alpha = if (active) 0.92f else 0.32f),
-                topLeft = Offset(i * gap + gap * 0.20f, (size.height - h) / 2f),
-                size = Size(gap * 0.6f, h),
-                cornerRadius = CornerRadius(gap * 0.3f),
+                color = palette.accent.copy(alpha = if (active) 0.92f else 0.32f),
+                topLeft = Offset(i * gap + gap * 0.2f, (size.height - h) / 2f),
+                size = androidx.compose.ui.geometry.Size(gap * 0.6f, h),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(gap * 0.3f),
             )
         }
     }
@@ -439,6 +567,7 @@ private fun Bubble(
     label: String,
     text: String,
     mine: Boolean,
+    palette: VoicePalette,
     streaming: Boolean = false,
 ) {
     val context = LocalContext.current
@@ -448,7 +577,7 @@ private fun Bubble(
     ) {
         Surface(
             modifier = Modifier
-                .fillMaxWidth(0.86f)
+                .fillMaxWidth(if (mine) 0.84f else 0.9f)
                 .pointerInput(label, text, mine) {
                     detectTapGestures(
                         onLongPress = {
@@ -464,18 +593,19 @@ private fun Bubble(
                 bottomStart = if (mine) 20.dp else 6.dp,
                 bottomEnd = if (mine) 6.dp else 20.dp,
             ),
-            color = if (mine) AccentDeep else CardBg,
+            color = if (mine) palette.accentDeep else palette.card,
+            border = if (mine) null else androidx.compose.foundation.BorderStroke(1.dp, palette.border.copy(alpha = 0.6f)),
         ) {
             Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                 Text(
                     label,
-                    color = if (mine) Color(0xFFC9D0FF) else Accent,
+                    color = if (mine) Color.White.copy(alpha = 0.75f) else palette.accent,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium,
                 )
                 Text(
                     text = if (streaming) "$text ▍" else text,
-                    color = TextMain,
+                    color = if (mine) Color.White else palette.text,
                     fontSize = 15.sp,
                     modifier = Modifier.padding(top = 4.dp),
                 )
@@ -485,22 +615,108 @@ private fun Bubble(
 }
 
 @Composable
+private fun StartButton(connecting: Boolean, palette: VoicePalette, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(58.dp)
+            .clip(RoundedCornerShape(29.dp))
+            .pointerInput(connecting) {
+                detectTapGestures { if (!connecting) onClick() }
+            },
+        shape = RoundedCornerShape(29.dp),
+        color = palette.accentDeep,
+        contentColor = Color.White,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            if (connecting) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                Spacer(Modifier.width(8.dp))
+            } else {
+                Icon(Icons.Filled.Mic, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+            }
+            Text(
+                stringResource(if (connecting) R.string.voice_connecting else R.string.voice_start),
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuickChips(
+    state: VoiceChatUiState,
+    palette: VoicePalette,
+    onOpenSettings: () -> Unit,
+    onToggleText: () -> Unit,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Chip(
+            label = stringResource(R.string.voice_settings_tone) + " · " + stringResource(state.voice.labelRes),
+            palette = palette,
+            onClick = onOpenSettings,
+        )
+        Chip(
+            label = stringResource(R.string.voice_settings_speed, state.speed),
+            palette = palette,
+            onClick = onOpenSettings,
+        )
+        Chip(
+            label = stringResource(R.string.voice_typing),
+            palette = palette,
+            onClick = onToggleText,
+        )
+    }
+}
+
+@Composable
+private fun Chip(label: String, palette: VoicePalette, onClick: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = palette.card,
+        border = androidx.compose.foundation.BorderStroke(1.dp, palette.border.copy(alpha = 0.6f)),
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .pointerInput(label) { detectTapGestures { onClick() } },
+    ) {
+        Text(
+            label,
+            color = palette.accent,
+            fontSize = 12.sp,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+        )
+    }
+}
+
+@Composable
 private fun HoldButton(
     listening: Boolean,
     recognizing: Boolean,
+    palette: VoicePalette,
     onPress: () -> Boolean,
     onRelease: () -> Unit,
 ) {
-    val gradient = when {
-        listening -> Brush.horizontalGradient(listOf(Accent, Color(0xFF9B6BFF)))
-        recognizing -> Brush.horizontalGradient(listOf(Color(0xFF7C5CFF), Color(0xFF6C7BFF)))
-        else -> Brush.horizontalGradient(listOf(AccentDeep, Accent))
+    val gradient = if (listening) {
+        Brush.horizontalGradient(listOf(palette.accent, palette.accentDeep))
+    } else {
+        Brush.horizontalGradient(
+            listOf(
+                palette.accent.copy(alpha = if (palette.isDark) 0.30f else 0.16f),
+                palette.accent.copy(alpha = if (palette.isDark) 0.22f else 0.12f),
+            ),
+        )
     }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(66.dp)
-            .clip(RoundedCornerShape(33.dp))
+            .height(64.dp)
+            .clip(RoundedCornerShape(32.dp))
             .background(gradient)
             .pointerInput(Unit) {
                 detectTapGestures(
@@ -514,7 +730,12 @@ private fun HoldButton(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
-        Icon(Icons.Filled.Mic, contentDescription = null, tint = TextMain, modifier = Modifier.size(22.dp))
+        Icon(
+            Icons.Filled.Mic,
+            contentDescription = null,
+            tint = if (listening) Color.White else palette.accent,
+            modifier = Modifier.size(22.dp),
+        )
         Spacer(Modifier.width(8.dp))
         Text(
             stringResource(
@@ -524,8 +745,8 @@ private fun HoldButton(
                     else -> R.string.hold_to_talk
                 },
             ),
-            color = TextMain,
-            fontSize = 16.sp,
+            color = if (listening) Color.White else palette.accent,
+            fontSize = 17.sp,
             fontWeight = FontWeight.SemiBold,
         )
     }
@@ -537,78 +758,87 @@ private fun VoiceSettingsSheet(
     voice: VoiceChoice,
     speed: Int,
     connected: Boolean,
+    palette: VoicePalette,
     onVoice: (VoiceChoice) -> Unit,
     onSpeed: (Int) -> Unit,
     onApply: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = CardBgSoft) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = palette.card) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .navigationBarsPadding()
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text(stringResource(R.string.voice_settings_title), color = TextMain, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-            Text(stringResource(R.string.voice_settings_tone), color = TextDim, fontSize = 13.sp)
+            Text(stringResource(R.string.voice_settings_title), color = palette.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.voice_settings_tone), color = palette.textDim, fontSize = 13.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 VoiceChoice.entries.filter { it != VoiceChoice.CLONE }.forEach { choice ->
                     val selected = voice == choice
                     Surface(
                         shape = RoundedCornerShape(20.dp),
-                        color = if (selected) Accent else CardBg,
-                        modifier = Modifier.clickable { onVoice(choice) },
+                        color = if (selected) palette.accent else palette.cardSoft,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .pointerInput(choice) {
+                                detectTapGestures {
+                                    onVoice(choice)
+                                    if (connected) onApply()
+                                }
+                            },
                     ) {
                         Text(
                             stringResource(choice.labelRes),
-                            color = if (selected) TextMain else TextDim,
+                            color = if (selected) Color.White else palette.textDim,
                             fontSize = 14.sp,
                             modifier = Modifier.padding(horizontal = 18.dp, vertical = 9.dp),
                         )
                     }
                 }
             }
-            Text(
-                stringResource(R.string.voice_settings_speed, speed),
-                color = TextDim,
-                fontSize = 13.sp,
-            )
+            Text(stringResource(R.string.voice_settings_speed, speed), color = palette.textDim, fontSize = 13.sp)
             Slider(
                 value = speed.toFloat(),
                 onValueChange = { onSpeed(it.toInt()) },
-                onValueChangeFinished = { onApply() },
+                onValueChangeFinished = { if (connected) onApply() },
                 valueRange = -50f..100f,
                 steps = 14,
                 colors = SliderDefaults.colors(
-                    thumbColor = Accent,
-                    activeTrackColor = Accent,
-                    inactiveTrackColor = CardBg,
+                    thumbColor = palette.accent,
+                    activeTrackColor = palette.accent,
+                    inactiveTrackColor = palette.cardSoft,
                 ),
             )
             if (connected) {
-                Text(stringResource(R.string.voice_settings_applied), color = Online, fontSize = 12.sp)
+                Text(stringResource(R.string.voice_settings_applied), color = palette.online, fontSize = 12.sp)
             }
-            Button(
-                onClick = onDismiss,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = AccentDeep, contentColor = TextMain),
+            Surface(
+                shape = RoundedCornerShape(28.dp),
+                color = palette.accentDeep,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .clip(RoundedCornerShape(28.dp))
+                    .pointerInput(Unit) { detectTapGestures { onDismiss() } },
             ) {
-                Text(stringResource(R.string.voice_settings_done))
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(stringResource(R.string.voice_settings_done), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                }
             }
         }
     }
 }
 
-private fun statusText(state: VoiceChatUiState, voicePhase: VoicePhase): String {
-    return when {
-        state.connecting -> "正在连接…"
-        state.holding || voicePhase == VoicePhase.Listening -> "正在听你说…"
-        state.speaking -> "豆包正在回答…"
-        state.fallback -> "基础语音对话 · 按住说话"
-        state.connected -> "按住说话，豆包会语音回答"
-        else -> "点开始，和豆包聊两句"
-    }
+@Composable
+private fun statusText(state: VoiceChatUiState, voicePhase: VoicePhase): String = when {
+    state.connecting -> stringResource(R.string.voice_connecting)
+    state.holding || voicePhase == VoicePhase.Listening -> stringResource(R.string.voice_listening)
+    state.speaking -> stringResource(R.string.voice_speaking)
+    state.fallback -> stringResource(R.string.voice_status_fallback)
+    else -> stringResource(R.string.voice_status_connected_hint)
 }
 
 private fun formatDuration(seconds: Int): String {

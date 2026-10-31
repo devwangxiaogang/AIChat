@@ -361,4 +361,12 @@
     <string name="onboarding_start">Save and start</string>
     <string name="onboarding_skip">Skip for now</string>
     <string name="settings_theme_instant">Applies immediately across all screens.</string>
+    <string name="voice_idle_title">Tap start and talk to Doubao</string>
+    <string name="voice_idle_subtitle">End-to-end realtime voice · Doubao answers by voice</string>
+    <string name="voice_typing">Type</string>
+    <string name="voice_speaking">Doubao is answering…</string>
+    <string name="voice_status_fallback">Basic voice chat · hold to talk</string>
+    <string name="voice_status_connected_hint">Hold to talk, Doubao will answer</string>
+    <string name="voice_hold_hint">Listening — release to let Doubao answer</string>
+    <string name="voice_interrupt_hint">Speaking interrupts the current reply</string>
 </resources>

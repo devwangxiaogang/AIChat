@@ -60,7 +60,7 @@ fun AiApp() {
             if (showBottomBar) {
                 AppBottomBar(
                     selected = section,
-                    dark = route == Routes.Voice,
+                    dark = false,
                     onSelect = { nav.openSection(it) },
                 )
             }

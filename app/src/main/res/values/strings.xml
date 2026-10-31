@@ -361,4 +361,12 @@
     <string name="onboarding_start">保存并开始</string>
     <string name="onboarding_skip">先跳过，稍后再配置</string>
     <string name="settings_theme_instant">切换后立即生效，所有页面同步。</string>
+    <string name="voice_idle_title">点开始，和豆包聊两句</string>
+    <string name="voice_idle_subtitle">端到端实时语音 · 豆包直接开口回答</string>
+    <string name="voice_typing">打字输入</string>
+    <string name="voice_speaking">豆包正在回答…</string>
+    <string name="voice_status_fallback">基础语音对话 · 按住说话</string>
+    <string name="voice_status_connected_hint">按住说话，豆包会语音回答</string>
+    <string name="voice_hold_hint">正在听你说，松手后豆包立刻回答</string>
+    <string name="voice_interrupt_hint">说话会自动打断当前播报</string>
 </resources>
