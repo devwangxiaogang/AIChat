@@ -28,6 +28,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -47,8 +49,10 @@ fun SettingsHomeScreen(
     onOpenData: () -> Unit,
     onOpenAbout: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
+    appearance: AppearanceViewModel = hiltViewModel(),
 ) {
     val configs = viewModel.configs
+    val themeMode by appearance.mode.collectAsStateWithLifecycle()
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -125,7 +129,7 @@ fun SettingsHomeScreen(
             SettingsGroup(stringResource(R.string.settings_section_appearance)) {
                 SettingsRow(
                     title = stringResource(R.string.settings_theme),
-                    value = stringResource(R.string.settings_theme_follow_system),
+                    value = stringResource(themeMode.labelRes),
                     onClick = onOpenAppearance,
                 )
             }

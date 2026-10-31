@@ -502,33 +502,11 @@ private fun ConversationItem(
 
 @Composable
 private fun EmptyState(onStartChat: () -> Unit, onOpenSettings: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 48.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+    com.example.myapplication.ui.components.EmptyState(
+        icon = Icons.AutoMirrored.Filled.Chat,
+        title = stringResource(R.string.empty_title),
+        body = stringResource(R.string.empty_body),
     ) {
-        Box(
-            modifier = Modifier
-                .size(72.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                Icons.AutoMirrored.Filled.Chat,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(32.dp),
-            )
-        }
-        Text(stringResource(R.string.empty_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-        Text(
-            stringResource(R.string.empty_body),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(onClick = onStartChat) { Text(stringResource(R.string.start_chat)) }
             TextButton(onClick = onOpenSettings) { Text(stringResource(R.string.keys_in_settings)) }

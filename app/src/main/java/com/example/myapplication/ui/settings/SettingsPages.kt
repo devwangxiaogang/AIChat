@@ -35,6 +35,14 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.myapplication.ui.prefs.ThemeMode
+import com.example.myapplication.ui.prefs.UiPreferences
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.StateFlow
+import javax.inject.Inject
 import com.example.myapplication.R
 import com.example.myapplication.domain.model.ProviderId
 import com.example.myapplication.domain.model.TtsEngine
@@ -254,11 +262,24 @@ fun VoicePrefsScreen(
     }
 }
 
-/** 外观：主题目前跟随系统，深色模式在 P4 阶段接入。 */
+@HiltViewModel
+class AppearanceViewModel @Inject constructor(
+    private val uiPreferences: UiPreferences,
+) : ViewModel() {
+    val mode: StateFlow<ThemeMode> = uiPreferences.themeMode
+
+    fun setMode(mode: ThemeMode) {
+        uiPreferences.setThemeMode(mode)
+    }
+}
+
+/** 外观：跟随系统 / 浅色 / 深色，切换立即生效。 */
 @Composable
 fun AppearanceScreen(
     onBack: () -> Unit,
+    viewModel: AppearanceViewModel = hiltViewModel(),
 ) {
+    val mode by viewModel.mode.collectAsStateWithLifecycle()
     SettingPageScaffold(
         title = stringResource(R.string.settings_section_appearance),
         onBack = onBack,
@@ -271,18 +292,20 @@ fun AppearanceScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             SettingsGroup(stringResource(R.string.settings_theme)) {
-                SettingsRow(
-                    title = stringResource(R.string.settings_theme_follow_system),
-                    value = stringResource(R.string.settings_theme_current),
-                    valueColor = MaterialTheme.colorScheme.primary,
-                )
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                SettingsRow(title = stringResource(R.string.settings_theme_light), value = stringResource(R.string.settings_soon))
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                SettingsRow(title = stringResource(R.string.settings_theme_dark), value = stringResource(R.string.settings_soon))
+                ThemeMode.entries.forEachIndexed { index, item ->
+                    SettingsRow(
+                        title = stringResource(item.labelRes),
+                        value = if (item == mode) stringResource(R.string.settings_theme_current) else null,
+                        valueColor = MaterialTheme.colorScheme.primary,
+                        onClick = { viewModel.setMode(item) },
+                    )
+                    if (index < ThemeMode.entries.lastIndex) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    }
+                }
             }
             Text(
-                stringResource(R.string.settings_theme_soon),
+                stringResource(R.string.settings_theme_instant),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 4.dp),

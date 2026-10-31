@@ -349,4 +349,16 @@
     <string name="quick_simpler">再简单点</string>
     <string name="quick_example">举个例子</string>
     <string name="quick_continue">继续</string>
+    <string name="theme_system">跟随系统</string>
+    <string name="theme_light">浅色</string>
+    <string name="theme_dark">深色</string>
+    <string name="onboarding_title">欢迎使用 AI 助手</string>
+    <string name="onboarding_intro">对话、翻译、语音，一套密钥就能开始。密钥只保存在本机，并用 Android Keystore 加密。</string>
+    <string name="onboarding_deepseek">DeepSeek API Key</string>
+    <string name="onboarding_doubao">豆包（方舟）API Key</string>
+    <string name="onboarding_speech">豆包语音 API Key（实时语音，可选）</string>
+    <string name="onboarding_note">也可以先跳过，稍后在「设置」里填写。</string>
+    <string name="onboarding_start">保存并开始</string>
+    <string name="onboarding_skip">先跳过，稍后再配置</string>
+    <string name="settings_theme_instant">切换后立即生效，所有页面同步。</string>
 </resources>

@@ -349,4 +349,16 @@
     <string name="quick_simpler">Simpler</string>
     <string name="quick_example">Example</string>
     <string name="quick_continue">Continue</string>
+    <string name="theme_system">Follow system</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="onboarding_title">Welcome to AI Assistant</string>
+    <string name="onboarding_intro">Chat, translate and voice — all you need is an API key. Keys stay on this device, encrypted with Android Keystore.</string>
+    <string name="onboarding_deepseek">DeepSeek API key</string>
+    <string name="onboarding_doubao">Doubao (Ark) API key</string>
+    <string name="onboarding_speech">Doubao Speech API key (realtime voice, optional)</string>
+    <string name="onboarding_note">You can also skip and fill it in Settings later.</string>
+    <string name="onboarding_start">Save and start</string>
+    <string name="onboarding_skip">Skip for now</string>
+    <string name="settings_theme_instant">Applies immediately across all screens.</string>
 </resources>
