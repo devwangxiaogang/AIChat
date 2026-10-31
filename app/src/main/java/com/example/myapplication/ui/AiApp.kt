@@ -1,5 +1,6 @@
 package com.example.myapplication.ui
 
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -56,6 +57,8 @@ fun AiApp() {
     val showBottomBar = route == Routes.Conversations || route == Routes.Translate || route == Routes.Voice
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        // 状态栏交给各页面自己的 TopAppBar / safeDrawingPadding，这里只留底部导航
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             if (showBottomBar) {
                 AppBottomBar(
