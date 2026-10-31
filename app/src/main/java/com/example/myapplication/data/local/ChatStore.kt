@@ -95,9 +95,15 @@ interface MessageDao {
 
     @Query(
         "SELECT * FROM messages WHERE conversationId = :conversationId AND status = 'DONE' " +
-            "ORDER BY createdAt ASC, id ASC",
+            "ORDER BY createdAt DESC, id DESC LIMIT :limit",
     )
-    suspend fun doneMessages(conversationId: Long): List<MessageEntity>
+    suspend fun recentDone(conversationId: Long, limit: Int): List<MessageEntity>
+
+    @Query(
+        "SELECT * FROM messages WHERE conversationId = :conversationId AND status = 'DONE' " +
+            "AND role = 'USER' ORDER BY createdAt DESC, id DESC LIMIT 1",
+    )
+    suspend fun lastDoneUser(conversationId: Long): MessageEntity?
 
     @Query(
         "SELECT * FROM messages WHERE conversationId = :conversationId " +
@@ -116,6 +122,13 @@ interface MessageDao {
             "WHERE id = :id",
     )
     suspend fun updateBody(id: Long, content: String, reasoning: String, status: String, error: String)
+
+    /**
+     * 进程在流式生成中被杀掉时，回复会停在 STREAMING。
+     * 启动时把这些行改成 FAILED，界面才不会一直显示「生成中」，重试也能用。
+     */
+    @Query("UPDATE messages SET status = 'FAILED', error = :error WHERE status = 'STREAMING'")
+    suspend fun failStreaming(error: String): Int
 }
 
 @Dao
@@ -126,6 +139,13 @@ interface AttachmentDao {
     @Query("SELECT * FROM message_attachments WHERE messageId = :messageId ORDER BY sortOrder ASC, id ASC")
     suspend fun forMessage(messageId: Long): List<AttachmentEntity>
 
+    /** 一次取回多条消息的用户附图，避免按消息逐条查询。 */
+    @Query(
+        "SELECT * FROM message_attachments WHERE messageId IN (:messageIds) " +
+            "AND source = 'USER' ORDER BY sortOrder ASC, id ASC",
+    )
+    suspend fun forUserMessages(messageIds: List<Long>): List<AttachmentEntity>
+
     @Query("SELECT * FROM message_attachments WHERE conversationId = :conversationId")
     suspend fun forConversation(conversationId: Long): List<AttachmentEntity>
 
@@ -134,7 +154,4 @@ interface AttachmentDao {
 
     @Insert
     suspend fun insertAll(entities: List<AttachmentEntity>)
-
-    @Query("DELETE FROM message_attachments WHERE conversationId = :conversationId")
-    suspend fun deleteForConversation(conversationId: Long)
 }

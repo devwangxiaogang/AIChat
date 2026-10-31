@@ -85,7 +85,7 @@ class SettingsRepositoryImpl @Inject constructor(
             .apply()
     }
 
-    private fun readAll(): Map<ProviderId, ProviderConfig> =
+    private fun readAll(): Map<ProviderId, ProviderConfig> = runCatching {
         ProviderId.entries.associateWith { provider ->
             ProviderConfig(
                 provider = provider,
@@ -99,20 +99,46 @@ class SettingsRepositoryImpl @Inject constructor(
                 speechApiKey = prefs.getString(key(provider, "speechApiKey"), "").orEmpty(),
             )
         }
+    }.getOrElse {
+        // 备份恢复到新设备后 Keystore 主密钥已经不同，加密偏好可能解不开。
+        // 与其让设置页打不开，不如清空回默认值，让用户重新填写密钥。
+        resetPreferences()
+        defaultConfigs()
+    }
+
+    private fun defaultConfigs(): Map<ProviderId, ProviderConfig> =
+        ProviderId.entries.associateWith { provider ->
+            ProviderConfig(
+                provider = provider,
+                apiKey = "",
+                baseUrl = provider.defaultBaseUrl,
+                model = provider.defaultModel,
+                speechApiKey = "",
+            )
+        }
 
     private fun readSpeech(): SpeechPreferences {
         val defaults = SpeechPreferences()
-        return SpeechPreferences(
-            engine = enumOr(prefs.getString(TTS_ENGINE, null), defaults.engine),
-            speaker = enumOr(prefs.getString(TTS_SPEAKER, null), defaults.speaker).readingVoice(),
-            translationModel = prefs.getString(TRANSLATION_MODEL, null)?.takeIf { it.isNotBlank() }
-                ?: defaults.translationModel,
-            textSource = prefs.getString(TEXT_SOURCE, null) ?: defaults.textSource,
-            textTarget = prefs.getString(TEXT_TARGET, null)?.takeIf { it.isNotBlank() } ?: defaults.textTarget,
-            liveSource = prefs.getString(LIVE_SOURCE, null)?.takeIf { it.isNotBlank() } ?: defaults.liveSource,
-            liveTarget = prefs.getString(LIVE_TARGET, null)?.takeIf { it.isNotBlank() } ?: defaults.liveTarget,
-            liveVoice = enumOr(prefs.getString(LIVE_VOICE, null), defaults.liveVoice),
-        )
+        return runCatching {
+            SpeechPreferences(
+                engine = enumOr(prefs.getString(TTS_ENGINE, null), defaults.engine),
+                speaker = enumOr(prefs.getString(TTS_SPEAKER, null), defaults.speaker).readingVoice(),
+                translationModel = prefs.getString(TRANSLATION_MODEL, null)?.takeIf { it.isNotBlank() }
+                    ?: defaults.translationModel,
+                textSource = prefs.getString(TEXT_SOURCE, null) ?: defaults.textSource,
+                textTarget = prefs.getString(TEXT_TARGET, null)?.takeIf { it.isNotBlank() } ?: defaults.textTarget,
+                liveSource = prefs.getString(LIVE_SOURCE, null)?.takeIf { it.isNotBlank() } ?: defaults.liveSource,
+                liveTarget = prefs.getString(LIVE_TARGET, null)?.takeIf { it.isNotBlank() } ?: defaults.liveTarget,
+                liveVoice = enumOr(prefs.getString(LIVE_VOICE, null), defaults.liveVoice),
+            )
+        }.getOrElse {
+            resetPreferences()
+            defaults
+        }
+    }
+
+    private fun resetPreferences() {
+        runCatching { prefs.edit().clear().apply() }
     }
 
     private fun VoiceChoice.readingVoice(): VoiceChoice =

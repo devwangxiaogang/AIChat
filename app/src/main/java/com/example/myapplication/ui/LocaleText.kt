@@ -81,5 +81,3 @@ private fun voiceLabelRes(option: String): Int? = when (option) {
     VoiceChoice.CLONE.name, "复刻原声" -> R.string.voice_clone
     else -> null
 }
-
-fun isDefaultConversationTitle(title: String): Boolean = title == "新对话" || title == "New chat"

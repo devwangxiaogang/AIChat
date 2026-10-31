@@ -31,10 +31,13 @@ class ConversationListViewModel @Inject constructor(
         private set
 
     init {
-        viewModelScope.launch {
-            starting = settingsRepository.startingModel()
-            modelCatalog.refreshAll()
-        }
+        refreshStarting()
+        viewModelScope.launch { modelCatalog.refreshAll() }
+    }
+
+    /** 从对话页返回时也刷新一次：上次成功发送的模型可能已经变了。 */
+    fun refreshStarting() {
+        viewModelScope.launch { starting = settingsRepository.startingModel() }
     }
 
     val conversations: StateFlow<List<Conversation>> = repository.observeConversations()

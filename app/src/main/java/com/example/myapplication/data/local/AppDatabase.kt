@@ -12,7 +12,8 @@ import androidx.room.RoomDatabase
         TranslationEntity::class,
     ],
     version = 3,
-    exportSchema = false,
+    // 导出 schema 到 app/schemas，迁移才能被 room-testing 验证。
+    exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDao

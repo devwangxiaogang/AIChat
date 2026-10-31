@@ -24,8 +24,6 @@
     <string name="change_model_note">Applies from the next message. Existing messages stay. Start a new chat to change provider.</string>
     <string name="mic_for_chat">Microphone permission is required for voice input</string>
     <string name="use_local_once">Use device voice this time</string>
-    <string name="stop_voice">Stop voice input</string>
-    <string name="voice_input">Voice input</string>
     <string name="listening_ellipsis">Listening…</string>
     <string name="recognizing">Recognizing…</string>
     <string name="input_hint">Message</string>
@@ -142,7 +140,6 @@
     <string name="text_input_hint">Type here, or hold below to speak</string>
     <string name="output_placeholder">Translation appears here</string>
     <string name="choose_voice">Choose voice</string>
-    <string name="see_all">All</string>
     <string name="search_history">Search source or translation</string>
     <string name="no_history">No translations yet</string>
     <string name="no_search_hits">No matching records</string>
@@ -159,7 +156,6 @@
     <string name="today">Today</string>
     <string name="yesterday">Yesterday</string>
     <string name="yesterday_time">Yesterday %1$s</string>
-    <string name="doubao_model_chip">Doubao · %1$s</string>
     <string name="choose_different_target">Choose a different target language</string>
     <string name="need_ark_key">Add the Doubao Ark key in Settings</string>
     <string name="translate_failed">Translation failed</string>
@@ -185,7 +181,6 @@
     <string name="asr_connect_failed">Could not connect to Doubao Speech</string>
     <string name="asr_failed_detail">Doubao speech recognition failed (%1$s)</string>
     <string name="asr_empty">No speech recognized</string>
-    <string name="asr_empty_frame">Doubao Speech returned empty data</string>
     <string name="choose_model_error">Choose a model</string>
     <string name="generating">A reply is being generated</string>
     <string name="conversation_missing">Conversation not found</string>
@@ -231,7 +226,6 @@
     <string name="attach_image">Add image</string>
     <string name="remove_image">Remove image</string>
     <string name="draw_mode">Draw</string>
-    <string name="draw_mode_on">Draw mode</string>
     <string name="draw_hint">Describe the image (Doubao Seedream); optional reference photos</string>
     <string name="need_doubao_for_draw">Drawing uses Doubao Seedream — add a Doubao Ark API key in Settings</string>
     <string name="draw_done_seedream">Image generated with Doubao Seedream</string>
@@ -243,7 +237,6 @@
     <string name="draw_message_title">Drawing</string>
     <string name="draw_default_prompt">Generate a beautiful image</string>
     <string name="drawing_in_progress">Generating image…</string>
-    <string name="draw_done">Image ready</string>
     <string name="image_gen_empty">The image API returned no image</string>
     <string name="image_gen_failed">Image generation failed</string>
     <string name="refresh_models">Refresh model list</string>
@@ -253,4 +246,6 @@
     <string name="capability_vision">Vision</string>
     <string name="capability_draw">Image gen</string>
     <string name="close_preview">Close preview</string>
+    <string name="generation_interrupted">The previous reply was interrupted</string>
+    <string name="avatar_me">Me</string>
 </resources>

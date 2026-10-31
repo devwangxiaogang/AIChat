@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,7 +40,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.myapplication.domain.model.Conversation
 import com.example.myapplication.domain.model.ProviderId
 import com.example.myapplication.R
-import com.example.myapplication.ui.isDefaultConversationTitle
 import com.example.myapplication.ui.localizedSummary
 import com.example.myapplication.ui.model.ModelPickerDialog
 import androidx.compose.ui.res.stringResource
@@ -64,6 +64,8 @@ fun ConversationListScreen(
     var showModels by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<Conversation?>(null) }
     val scope = rememberCoroutineScope()
+    // 从对话页返回时刷新一次，「新建对话」才会用上最近一次成功发送的模型。
+    LaunchedEffect(Unit) { viewModel.refreshStarting() }
 
     SectionScaffold(
         section = AppSection.Chat,
@@ -169,11 +171,7 @@ fun ConversationListScreen(
             onDismissRequest = { pendingDelete = null },
             title = { Text(stringResource(R.string.delete_conversation)) },
             text = {
-                val title = if (isDefaultConversationTitle(conversation.title)) {
-                    stringResource(R.string.new_chat)
-                } else {
-                    conversation.title
-                }
+                val title = conversation.title.ifBlank { stringResource(R.string.new_chat) }
                 Text(stringResource(R.string.delete_conversation_body, title))
             },
             confirmButton = {
@@ -210,7 +208,7 @@ private fun ConversationCard(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    if (isDefaultConversationTitle(conversation.title)) stringResource(R.string.new_chat) else conversation.title,
+                    conversation.title.ifBlank { stringResource(R.string.new_chat) },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

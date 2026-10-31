@@ -30,10 +30,11 @@ import com.example.myapplication.domain.model.Role
 import com.example.myapplication.domain.model.StreamEvent
 import com.example.myapplication.domain.model.ToolCallRequest
 import com.example.myapplication.domain.model.WireMessage
-import com.example.myapplication.ui.isDefaultConversationTitle
+import com.example.myapplication.domain.model.historyStartIndex
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -92,7 +93,8 @@ class ChatRepositoryImpl @Inject constructor(
         val chosen = model.trim().ifBlank { config.model.ifBlank { provider.defaultModel } }
         return conversationDao.insert(
             ConversationEntity(
-                title = context.getString(R.string.new_chat),
+                // 空标题表示「还没自动命名」，界面再显示当前语言的「新对话」。
+                title = "",
                 provider = provider.name,
                 model = chosen,
                 systemPrompt = context.getString(R.string.assistant_prompt),
@@ -200,7 +202,7 @@ class ChatRepositoryImpl @Inject constructor(
         val paths = attachmentDao.forMessage(last.id).map { it.localPath }
         messageDao.delete(last.id)
         mediaStore.deletePaths(paths)
-        val user = messageDao.doneMessages(conversationId).lastOrNull { it.role == Role.USER.name }
+        val user = messageDao.lastDoneUser(conversationId)
             ?: return context.getString(R.string.nothing_to_retry)
         if (!start(conversation.id) {
                 if (drawRetry) {
@@ -246,7 +248,8 @@ class ChatRepositoryImpl @Inject constructor(
     }
 
     private fun start(conversationId: Long, block: suspend () -> Unit): Boolean {
-        val job = appScope.launch { block() }
+        // 先建一个惰性任务，等占位成功后再真正启动，避免两次快速发送都插入了用户消息。
+        val job = appScope.launch(start = CoroutineStart.LAZY) { block() }
         var claimed = false
         jobs.compute(conversationId) { _, existing ->
             if (existing?.isActive == true) {
@@ -266,6 +269,7 @@ class ChatRepositoryImpl @Inject constructor(
             jobs.remove(conversationId, job)
             activeIds.update { ids -> ids - conversationId }
         }
+        job.start()
         return true
     }
 
@@ -314,7 +318,7 @@ class ChatRepositoryImpl @Inject constructor(
             conversationDao.update(
                 conversation.copy(
                     title = if ((newUserText != null || imported.isNotEmpty()) &&
-                        isDefaultConversationTitle(conversation.title)
+                        isUntitled(conversation.title)
                     ) {
                         userText.take(24).ifBlank { context.getString(R.string.image_message_title) }
                     } else {
@@ -475,7 +479,7 @@ class ChatRepositoryImpl @Inject constructor(
                 }
                 conversationDao.update(
                     conversation.copy(
-                        title = if (isDefaultConversationTitle(conversation.title)) {
+                        title = if (isUntitled(conversation.title)) {
                             prompt.take(24).ifBlank { context.getString(R.string.draw_message_title) }
                         } else {
                             conversation.title
@@ -550,33 +554,53 @@ class ChatRepositoryImpl @Inject constructor(
         )
     }
 
+    /**
+     * 组装发给模型的历史。
+     *
+     * 只按需取最近一段（不再整表加载），条数和字符数都设上限；
+     * 图片单独受数量和编码后体积限制，避免几个大图把请求体撑到几十 MB。
+     */
     private suspend fun buildWireHistory(conversation: ConversationEntity): List<WireMessage> {
-        val history = messageDao.doneMessages(conversation.id).takeLast(CONTEXT_LIMIT)
-        val imageBudget = IMAGE_HISTORY_LIMIT
-        var imagesLeft = imageBudget
-        val chronologic = buildList {
+        val recent = messageDao.recentDone(conversation.id, HISTORY_FETCH_LIMIT).asReversed()
+        val window = if (recent.isEmpty()) {
+            emptyList()
+        } else {
+            val start = historyStartIndex(
+                textLengths = recent.map { it.content.length },
+                maxMessages = HISTORY_MAX_MESSAGES,
+                maxChars = HISTORY_MAX_CHARS,
+            )
+            recent.subList(start, recent.size)
+        }
+        val userIds = window.filter { it.role == Role.USER.name }.map { it.id }
+        val images = if (userIds.isEmpty()) {
+            emptyMap()
+        } else {
+            attachmentDao.forUserMessages(userIds).groupBy { it.messageId }
+        }
+        var imagesLeft = IMAGE_HISTORY_LIMIT
+        var imageCharsLeft = IMAGE_HISTORY_CHARS
+        return buildList {
             if (conversation.systemPrompt.isNotBlank()) {
                 add(WireMessage(Role.SYSTEM, conversation.systemPrompt))
             }
-            // 从旧到新：只给最近若干条用户附图带上 base64，更早的只留文字。
-            val withImagesFromEnd = history.asReversed().map { row ->
+            window.forEach { row ->
                 val role = Role.valueOf(row.role)
-                val attachments = if (role == Role.USER && imagesLeft > 0) {
-                    attachmentDao.forMessage(row.id)
-                        .filter { it.source == AttachmentSource.USER.name }
-                        .take(imagesLeft)
-                } else {
-                    emptyList()
+                val picked = mutableListOf<AttachmentEntity>()
+                if (role == Role.USER) {
+                    for (attachment in images[row.id].orEmpty()) {
+                        if (picked.size >= imagesLeft) break
+                        val encoded = mediaStore.encodedLength(attachment.localPath)
+                        if (encoded <= 0 || encoded > imageCharsLeft) continue
+                        imageCharsLeft -= encoded
+                        picked += attachment
+                    }
                 }
-                imagesLeft -= attachments.size
-                val dataUrls = attachments.mapNotNull { att ->
-                    mediaStore.toDataUrl(att.localPath, att.mime)
-                }
-                WireMessage(role, row.content, dataUrls)
-            }.asReversed()
-            addAll(withImagesFromEnd)
+                imagesLeft -= picked.size
+                val dataUrls = picked.mapNotNull { mediaStore.toDataUrl(it.localPath, it.mime) }
+                add(WireMessage(role, row.content, dataUrls))
+            }
         }
-        return chronologic
     }
 
     private fun parseToolPrompt(argumentsJson: String): String? {
@@ -619,9 +643,16 @@ class ChatRepositoryImpl @Inject constructor(
         return now
     }
 
+    /**
+     * 空标题表示还没自动命名。旧版本把本地化的「新对话」写进了库，
+     * 读出来时统一归一成空串，避免换系统语言后标题还是旧语言。
+     */
+    private fun isUntitled(title: String): Boolean =
+        title.isBlank() || title == LEGACY_NEW_CHAT_ZH || title == LEGACY_NEW_CHAT_EN
+
     private fun ConversationEntity.toDomain(): Conversation = Conversation(
         id = id,
-        title = title,
+        title = if (isUntitled(title)) "" else title,
         provider = ProviderId.valueOf(provider),
         model = model,
         systemPrompt = systemPrompt,
@@ -653,9 +684,16 @@ class ChatRepositoryImpl @Inject constructor(
 
     companion object {
         const val DRAW_ERROR_PREFIX = "__draw__:"
-        private const val CONTEXT_LIMIT = 20
+        /** 先按条数粗取，再交给 [historyStartIndex] 按字符预算裁剪。 */
+        private const val HISTORY_FETCH_LIMIT = 40
+        private const val HISTORY_MAX_MESSAGES = 24
+        private const val HISTORY_MAX_CHARS = 12_000
         private const val IMAGE_HISTORY_LIMIT = 4
+        /** 历史附图 base64 后的总字符预算（约 4.5 MB 原始数据）。 */
+        private const val IMAGE_HISTORY_CHARS = 6_000_000L
         private const val FLUSH_INTERVAL_MS = 100L
+        private const val LEGACY_NEW_CHAT_ZH = "新对话"
+        private const val LEGACY_NEW_CHAT_EN = "New chat"
         private val DRAW_PATTERNS = listOf(
             Regex("""画(一)?(张|个|幅)"""),
             Regex("""帮我画"""),

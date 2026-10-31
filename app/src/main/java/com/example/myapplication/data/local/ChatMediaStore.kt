@@ -46,17 +46,19 @@ class ChatMediaStore @Inject constructor(
         file.absolutePath
     }
 
-    suspend fun saveGeneratedFromBase64(b64: String, mime: String = "image/jpeg"): String {
-        val raw = Base64.decode(b64, Base64.DEFAULT)
-        return saveGenerated(raw, mime)
-    }
-
     suspend fun toDataUrl(localPath: String, mime: String): String? = withContext(Dispatchers.IO) {
         val file = File(localPath)
         if (!file.isFile) return@withContext null
         val bytes = file.readBytes()
         val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
         "data:$mime;base64,$encoded"
+    }
+
+    /** base64 后的大致字符数，用来在读文件之前判断请求体预算。 */
+    fun encodedLength(localPath: String): Long {
+        val file = File(localPath)
+        if (!file.isFile) return 0
+        return file.length() / 3 * 4
     }
 
     fun deletePaths(paths: List<String>) {

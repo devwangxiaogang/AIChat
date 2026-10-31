@@ -110,7 +110,6 @@ import com.example.myapplication.data.local.ChatMediaStore
 import com.example.myapplication.domain.model.ChatMessage
 import com.example.myapplication.domain.model.MessageStatus
 import com.example.myapplication.domain.model.Role
-import com.example.myapplication.ui.isDefaultConversationTitle
 import com.example.myapplication.ui.localizedSummary
 import com.example.myapplication.ui.model.ModelPickerDialog
 import kotlinx.coroutines.launch
@@ -182,7 +181,8 @@ fun ChatScreen(
     }
     val tail = state.messages.lastOrNull()
     LaunchedEffect(state.messages.size, tail?.content?.length, tail?.reasoning?.length, tail?.attachments?.size) {
-        if (state.messages.isNotEmpty()) {
+        // 只在已经停在底部时跟随输出；用户上滑看历史时不要抢滚动位置。
+        if (state.messages.isNotEmpty() && !listState.canScrollBackward) {
             listState.animateScrollToItem(0)
         }
     }
@@ -194,10 +194,10 @@ fun ChatScreen(
             TopAppBar(
                 title = {
                     Column {
+                        val headerTitle = state.conversation?.title
                         Text(
-                            state.conversation?.title?.let { title ->
-                                if (isDefaultConversationTitle(title)) stringResource(R.string.new_chat) else title
-                            } ?: stringResource(R.string.chat_fallback),
+                            headerTitle?.takeIf { it.isNotBlank() }
+                                ?: stringResource(if (headerTitle == null) R.string.chat_fallback else R.string.new_chat),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -774,7 +774,7 @@ private fun MessageBubble(
         }
         if (isUser) {
             Spacer(Modifier.width(8.dp))
-            AvatarBubble(label = "我", tint = MaterialTheme.colorScheme.primary)
+            AvatarBubble(label = stringResource(R.string.avatar_me), tint = MaterialTheme.colorScheme.primary)
         }
     }
     }

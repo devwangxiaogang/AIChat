@@ -122,5 +122,10 @@ internal fun parseMarkdown(source: String, color: Color, linkColor: Color): Anno
     }
 }
 
+/** 只认 http(s)，避免把模型给出的相对路径或奇怪 scheme 交给图片加载器。 */
 fun extractMarkdownImageUrls(text: String): List<String> =
-    Regex("""!\[[^\]]*]\(([^)]+)\)""").findAll(text).map { it.groupValues[1] }.toList()
+    Regex("""!\[[^\]]*]\(([^)]+)\)""")
+        .findAll(text)
+        .map { it.groupValues[1].trim() }
+        .filter { it.startsWith("http://", ignoreCase = true) || it.startsWith("https://", ignoreCase = true) }
+        .toList()

@@ -45,6 +45,11 @@ kotlin {
     }
 }
 
+ksp {
+    // Room 的 schema 输出目录，配合 exportSchema = true 做迁移校验。
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
