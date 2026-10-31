@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -175,6 +176,11 @@ fun VoiceChatScreen(
         onDispose { speech.destroy() }
     }
     val speakingNow = state.holding || state.speaking || voicePhase == VoicePhase.Listening
+    val level by animateFloatAsState(
+        targetValue = state.amplitude,
+        animationSpec = tween(120),
+        label = "voiceLevel",
+    )
     BackHandler { if (state.connected || state.connecting) viewModel.stopSession() else onBack() }
     LaunchedEffect(state.userText, state.assistantText, state.partialUserText, state.error) {
         val last = listState.layoutInfo.totalItemsCount - 1
@@ -238,7 +244,7 @@ fun VoiceChatScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    VoiceOrb(active = false, connected = false, size = 148.dp, palette = palette)
+                    VoiceOrb(active = false, connected = false, size = 148.dp, amplitude = level, palette = palette)
                     Spacer(Modifier.height(18.dp))
                     Text(
                         stringResource(R.string.voice_idle_title),
@@ -278,7 +284,7 @@ fun VoiceChatScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    VoiceOrb(active = speakingNow, connected = true, size = 96.dp, palette = palette)
+                    VoiceOrb(active = speakingNow, connected = true, size = 96.dp, amplitude = level, palette = palette)
                     Spacer(Modifier.height(8.dp))
                     Text(
                         statusText(state, voicePhase),
@@ -317,6 +323,20 @@ fun VoiceChatScreen(
                         .padding(top = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
+                    val blank = state.userText.isBlank() && state.assistantText.isBlank() &&
+                        state.partialUserText.isBlank() && !state.connecting && !state.holding &&
+                        !state.speaking && voicePhase == VoicePhase.Idle
+                    if (blank) {
+                        item {
+                            Text(
+                                stringResource(R.string.voice_hold_hint_short),
+                                color = palette.textDim,
+                                fontSize = 13.sp,
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            )
+                        }
+                    }
                     if (state.userText.isNotBlank()) {
                         item { Bubble(stringResource(R.string.voice_you), state.userText, mine = true, palette = palette) }
                     }
@@ -354,7 +374,7 @@ fun VoiceChatScreen(
                     }
                     item { Spacer(Modifier.height(2.dp)) }
                 }
-                Waveform(active = speakingNow, palette = palette)
+                Waveform(active = speakingNow, amplitude = level, palette = palette)
                 if (showTextInput) {
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
@@ -482,7 +502,7 @@ private fun StatusChip(connected: Boolean, connecting: Boolean, palette: VoicePa
 }
 
 @Composable
-private fun VoiceOrb(active: Boolean, connected: Boolean, size: Dp, palette: VoicePalette) {
+private fun VoiceOrb(active: Boolean, connected: Boolean, size: Dp, amplitude: Float, palette: VoicePalette) {
     val transition = rememberInfiniteTransition(label = "orb")
     val pulse by transition.animateFloat(
         initialValue = 0f,
@@ -500,8 +520,10 @@ private fun VoiceOrb(active: Boolean, connected: Boolean, size: Dp, palette: Voi
         Canvas(Modifier.fillMaxSize()) {
             val r = this.size.minDimension / 2f
             if (active && connected) {
-                drawCircle(palette.accent.copy(alpha = 0.28f * (1f - pulse)), radius = r * (0.55f + 0.45f * pulse))
-                drawCircle(palette.accent.copy(alpha = 0.16f * (1f - pulse)), radius = r * (0.72f + 0.28f * pulse))
+                val boost = 1f + amplitude * 0.22f
+                drawCircle(palette.accent.copy(alpha = 0.28f * (1f - pulse)), radius = r * (0.55f + 0.45f * pulse) * boost)
+                drawCircle(palette.accent.copy(alpha = 0.16f * (1f - pulse)), radius = r * (0.72f + 0.28f * pulse) * boost)
+                drawCircle(palette.accent.copy(alpha = 0.10f + 0.18f * amplitude), radius = r * (0.98f + 0.06f * amplitude))
             } else {
                 drawCircle(palette.accent.copy(alpha = 0.10f), radius = r * 0.95f)
             }
@@ -512,7 +534,8 @@ private fun VoiceOrb(active: Boolean, connected: Boolean, size: Dp, palette: Voi
             val centerY = this.size.height * 0.66f
             for (i in 0 until bars) {
                 val wave = abs(sin(barPhase * 2f * PI.toFloat() + i * 0.9f))
-                val h = r * (0.10f + 0.22f * wave) * (if (active) 1.4f else 0.9f)
+                val energy = if (active) (0.45f + amplitude * 1.8f) else 0.9f
+                val h = r * (0.10f + 0.22f * wave) * energy
                 val x = this.size.width / 2f + (i - (bars - 1) / 2f) * r * 0.16f
                 drawRoundRect(
                     color = Color.White.copy(alpha = 0.92f),
@@ -533,7 +556,7 @@ private fun VoiceOrb(active: Boolean, connected: Boolean, size: Dp, palette: Voi
 }
 
 @Composable
-private fun Waveform(active: Boolean, palette: VoicePalette) {
+private fun Waveform(active: Boolean, amplitude: Float, palette: VoicePalette) {
     val transition = rememberInfiniteTransition(label = "wave")
     val phase by transition.animateFloat(
         initialValue = 0f,
@@ -550,7 +573,7 @@ private fun Waveform(active: Boolean, palette: VoicePalette) {
         val gap = size.width / count
         for (i in 0 until count) {
             val wave = abs(sin(phase * 2f * PI.toFloat() + i * 0.55f))
-            val amp = if (active) 0.22f + 0.78f * wave else 0.08f + 0.10f * wave
+            val amp = if (active) (0.10f + 0.90f * wave) * (0.45f + amplitude * 1.6f) else 0.08f + 0.10f * wave
             val h = size.height * amp
             drawRoundRect(
                 color = palette.accent.copy(alpha = if (active) 0.92f else 0.32f),

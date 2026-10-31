@@ -369,4 +369,5 @@
     <string name="voice_status_connected_hint">按住说话，豆包会语音回答</string>
     <string name="voice_hold_hint">正在听你说，松手后豆包立刻回答</string>
     <string name="voice_interrupt_hint">说话会自动打断当前播报</string>
+    <string name="voice_hold_hint_short">按住下方按钮，直接说话</string>
 </resources>

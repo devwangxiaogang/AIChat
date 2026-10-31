@@ -43,6 +43,8 @@ data class VoiceChatUiState(
     val connecting: Boolean = false,
     val holding: Boolean = false,
     val speaking: Boolean = false,
+    /** 当前音频电平 0..1，用来驱动光球与声波。 */
+    val amplitude: Float = 0f,
     val userText: String = "",
     val partialUserText: String = "",
     val assistantText: String = "",
@@ -145,7 +147,7 @@ class VoiceChatViewModel @Inject constructor(
         session?.close()
         session = null
         player.release()
-        state = state.copy(connected = false, connecting = false, holding = false, speaking = false, durationSec = 0)
+        state = state.copy(connected = false, connecting = false, holding = false, speaking = false, durationSec = 0, amplitude = 0f)
     }
 
     fun setVoice(voice: VoiceChoice) {
@@ -198,7 +200,7 @@ class VoiceChatViewModel @Inject constructor(
         val current = session ?: return
         current.commitAudio()
         current.mute()
-        state = state.copy(holding = false)
+        state = state.copy(holding = false, amplitude = 0f)
     }
 
     fun sendText(text: String) {
@@ -339,9 +341,9 @@ class VoiceChatViewModel @Inject constructor(
             }
             is VoiceChatEvent.Audio -> {
                 player.write(event.pcm)
-                state = state.copy(speaking = true)
+                state = state.copy(speaking = true, amplitude = levelOf(event.pcm))
             }
-            VoiceChatEvent.AssistantAudioDone -> state = state.copy(speaking = false)
+            VoiceChatEvent.AssistantAudioDone -> state = state.copy(speaking = false, amplitude = 0f)
             VoiceChatEvent.Ended -> {
                 session = null
                 stopTicker()
@@ -387,9 +389,17 @@ class VoiceChatViewModel @Inject constructor(
             try {
                 record.startRecording()
                 val buffer = ByteArray(FRAME_BYTES)
+                var lastLevelAt = 0L
                 while (currentCoroutineContext().isActive) {
                     val read = record.read(buffer, 0, buffer.size)
-                    if (read > 0) current.appendAudio(buffer.copyOf(read))
+                    if (read > 0) {
+                        current.appendAudio(buffer.copyOf(read))
+                        val now = android.os.SystemClock.elapsedRealtime()
+                        if (now - lastLevelAt >= 80) {
+                            lastLevelAt = now
+                            state = state.copy(amplitude = levelOf(buffer, read))
+                        }
+                    }
                 }
             } finally {
                 runCatching {
@@ -405,6 +415,20 @@ class VoiceChatViewModel @Inject constructor(
     private fun stopCapture() {
         captureJob?.cancel()
         captureJob = null
+    }
+
+    /** 16bit 单声道 PCM 的 RMS 电平，归一化到 0..1。 */
+    private fun levelOf(pcm: ByteArray, length: Int = pcm.size): Float {
+        if (length < 2) return 0f
+        var sum = 0.0
+        var i = 0
+        while (i + 1 < length) {
+            val sample = ((pcm[i].toInt() and 0xFF) or (pcm[i + 1].toInt() shl 8)).toShort().toInt()
+            sum += sample.toDouble() * sample
+            i += 2
+        }
+        val rms = kotlin.math.sqrt(sum / (length / 2))
+        return (rms / 6000.0).coerceIn(0.0, 1.0).toFloat()
     }
 
     private fun appendLine(current: String, incoming: String): String {

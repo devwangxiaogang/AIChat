@@ -369,4 +369,5 @@
     <string name="voice_status_connected_hint">Hold to talk, Doubao will answer</string>
     <string name="voice_hold_hint">Listening — release to let Doubao answer</string>
     <string name="voice_interrupt_hint">Speaking interrupts the current reply</string>
+    <string name="voice_hold_hint_short">Hold the button below and start talking</string>
 </resources>
