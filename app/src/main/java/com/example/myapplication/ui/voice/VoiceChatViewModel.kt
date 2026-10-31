@@ -44,10 +44,16 @@ class VoiceChatViewModel @Inject constructor(
     private val speechRecognizer: DoubaoAsrClient,
     private val providers: Map<ProviderId, @JvmSuppressWildcards LlmProvider>,
 ) : ViewModel() {
+    private companion object {
+        const val HISTORY_LIMIT = 12
+    }
     var state by mutableStateOf(VoiceChatUiState())
         private set
 
     private var chatJob: Job? = null
+
+    /** 多轮上下文，只保留最近若干条。 */
+    private val history = mutableListOf<WireMessage>()
 
     fun recognize(wav: ByteArray, onSuccess: (String) -> Unit, onFailure: (String) -> Unit) {
         viewModelScope.launch {
@@ -83,6 +89,8 @@ class VoiceChatViewModel @Inject constructor(
     fun send(text: String) {
         val content = text.trim()
         if (content.isEmpty()) return
+        history += WireMessage(Role.USER, content)
+        while (history.size > HISTORY_LIMIT) history.removeAt(0)
         chatJob?.cancel()
         speechReader.stop()
         state = state.copy(
@@ -91,6 +99,7 @@ class VoiceChatViewModel @Inject constructor(
             assistantText = "",
             userText = appendLine(state.userText, content),
         )
+        val previousReply = state.assistantText
         chatJob = viewModelScope.launch {
             try {
                 val selected = settingsRepository.startingModel()
@@ -110,7 +119,7 @@ class VoiceChatViewModel @Inject constructor(
                     baseUrl = config.baseUrl,
                     request = ChatRequest(
                         model = selected.model,
-                        messages = listOf(WireMessage(Role.USER, content)),
+                        messages = history.toList(),
                     ),
                 ).catch { error ->
                     state = state.copy(
@@ -121,7 +130,8 @@ class VoiceChatViewModel @Inject constructor(
                     when (event) {
                         is StreamEvent.Delta -> {
                             reply += event.text
-                            state = state.copy(assistantText = reply)
+                            val shown = if (previousReply.isBlank()) reply else "$previousReply\n$reply"
+                            state = state.copy(assistantText = shown)
                         }
                         is StreamEvent.Failed -> {
                             state = state.copy(busy = false, error = event.message)
@@ -131,6 +141,8 @@ class VoiceChatViewModel @Inject constructor(
                 }
                 state = state.copy(busy = false)
                 if (reply.isNotBlank()) {
+                    history += WireMessage(Role.ASSISTANT, reply)
+                    while (history.size > HISTORY_LIMIT) history.removeAt(0)
                     speechReader.toggle(viewModelScope, "voice-chat", reply) { failure ->
                         state = state.copy(error = failure.message)
                     }
@@ -155,6 +167,7 @@ class VoiceChatViewModel @Inject constructor(
 
     fun clear() {
         stop()
+        history.clear()
         state = VoiceChatUiState()
     }
 
