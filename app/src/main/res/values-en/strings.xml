@@ -281,4 +281,5 @@
     <string name="backup_failed">Backup failed (%1$s)</string>
     <string name="voice_type_hint">You can also type a question</string>
     <string name="voice_need_start">Tap "Start talking" first</string>
+    <string name="voice_forbidden_hint">No permission (403): make sure the project of this Speech API Key has Seeduplex enabled</string>
 </resources>

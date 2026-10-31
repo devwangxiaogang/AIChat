@@ -281,4 +281,5 @@
     <string name="backup_failed">备份失败（%1$s）</string>
     <string name="voice_type_hint">也可以打字提问</string>
     <string name="voice_need_start">请先点「开始对话」</string>
+    <string name="voice_forbidden_hint">没有调用权限（403）：请到豆包语音控制台「API Key 管理」确认这个 Key 所属项目已开通「实时语音（Seeduplex）」服务</string>
 </resources>

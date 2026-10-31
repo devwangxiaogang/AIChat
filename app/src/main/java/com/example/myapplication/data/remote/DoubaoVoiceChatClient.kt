@@ -157,7 +157,7 @@ class DoubaoVoiceChatClient @Inject constructor(
     private fun describeFailure(code: Int, message: String, logId: String): String {
         val base = when (code) {
             401 -> context.getString(R.string.error_api_key_invalid)
-            403 -> context.getString(R.string.error_forbidden)
+            403 -> context.getString(R.string.voice_forbidden_hint)
             else -> message.ifBlank { context.getString(R.string.voice_connect_failed) }
         }
         return if (logId.isBlank()) base else "$base（$logId）"
