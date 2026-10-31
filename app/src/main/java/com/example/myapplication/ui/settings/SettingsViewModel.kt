@@ -68,6 +68,13 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun setLiveVoice(voice: VoiceChoice) {
+        viewModelScope.launch {
+            settingsRepository.editSpeech { it.copy(liveVoice = voice) }
+            speech = settingsRepository.speech()
+        }
+    }
+
     fun setSpeaker(speaker: VoiceChoice) {
         viewModelScope.launch {
             settingsRepository.editSpeech { it.copy(speaker = speaker) }
