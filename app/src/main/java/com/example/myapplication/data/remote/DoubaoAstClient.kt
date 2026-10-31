@@ -47,17 +47,25 @@ class DoubaoAstClient @Inject constructor(
         targetLanguage: String,
         speakerId: String?,
         audio: ReceiveChannel<ByteArray>,
+        appId: String = "",
+        accessToken: String = "",
         onEvent: (AstEvent) -> Unit,
     ) = withContext(Dispatchers.IO) {
         val messages = Channel<ByteArray>(Channel.UNLIMITED)
         val opened = CompletableDeferred<Unit>()
         val sessionId = UUID.randomUUID().toString()
-        val request = Request.Builder()
+        val requestBuilder = Request.Builder()
             .url(ENDPOINT)
-            .header("X-Api-Key", apiKey)
             .header("X-Api-Resource-Id", RESOURCE_ID)
             .header("X-Api-Connect-Id", sessionId)
-            .build()
+        if (appId.isNotBlank() && accessToken.isNotBlank()) {
+            requestBuilder
+                .header("X-Api-App-Key", appId.trim())
+                .header("X-Api-Access-Key", accessToken.trim())
+        } else {
+            requestBuilder.header("X-Api-Key", apiKey.trim())
+        }
+        val request = requestBuilder.build()
         val socket = http.newWebSocket(
             request,
             object : WebSocketListener() {

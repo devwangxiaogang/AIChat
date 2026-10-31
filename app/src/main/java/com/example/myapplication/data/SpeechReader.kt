@@ -72,12 +72,15 @@ class SpeechReader @Inject constructor(
                 if (useLocal) {
                     local.speak(content)
                 } else {
-                    val apiKey = settingsRepository.get(ProviderId.DOUBAO).speechApiKey.trim()
-                    if (apiKey.isEmpty()) {
+                    val config = settingsRepository.get(ProviderId.DOUBAO)
+                    val apiKey = config.speechApiKey.trim()
+                    val appId = config.speechAppId.trim()
+                    val accessToken = config.speechAccessToken.trim()
+                    if (apiKey.isEmpty() && (appId.isEmpty() || accessToken.isEmpty())) {
                         onFailure(SpeakFailure(context.getString(R.string.need_speech_key_or_local), canUseLocal = true))
                         return@launch
                     }
-                    playDoubao(apiKey, preferences.speaker, content)
+                    playDoubao(apiKey, appId, accessToken, preferences.speaker, content)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -118,13 +121,25 @@ class SpeechReader @Inject constructor(
         speakingState.value = null
     }
 
-    private suspend fun playDoubao(apiKey: String, speaker: VoiceChoice, text: String) {
+    private suspend fun playDoubao(
+        apiKey: String,
+        appId: String,
+        accessToken: String,
+        speaker: VoiceChoice,
+        text: String,
+    ) {
         val voice = (if (speaker == VoiceChoice.CLONE) VoiceChoice.FEMALE else speaker).ttsSpeakerId
         val playback = PcmPlayer(SAMPLE_RATE)
         synchronized(this) { player = playback }
         playback.start()
         for (chunk in speechChunks(text, DOUBAO_CHUNK)) {
-            ttsClient.synthesize(apiKey, voice, chunk) { pcm -> playback.write(pcm) }
+            ttsClient.synthesize(
+                apiKey = apiKey,
+                speaker = voice,
+                text = chunk,
+                appId = appId,
+                accessToken = accessToken,
+            ) { pcm -> playback.write(pcm) }
         }
     }
 

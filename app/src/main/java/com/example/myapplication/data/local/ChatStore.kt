@@ -78,6 +78,10 @@ interface ConversationDao {
     @Query("SELECT * FROM conversations WHERE id = :id")
     suspend fun get(id: Long): ConversationEntity?
 
+    /** 导出备份时按时间顺序取全部会话。 */
+    @Query("SELECT * FROM conversations ORDER BY updatedAt DESC")
+    suspend fun all(): List<ConversationEntity>
+
     @Insert
     suspend fun insert(entity: ConversationEntity): Long
 
@@ -92,6 +96,10 @@ interface ConversationDao {
 interface MessageDao {
     @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY createdAt ASC, id ASC")
     fun observe(conversationId: Long): Flow<List<MessageEntity>>
+
+    /** 导出备份时按时间顺序取整个会话的消息。 */
+    @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY createdAt ASC, id ASC")
+    suspend fun list(conversationId: Long): List<MessageEntity>
 
     @Query(
         "SELECT * FROM messages WHERE conversationId = :conversationId AND status = 'DONE' " +

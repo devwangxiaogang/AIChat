@@ -1,5 +1,7 @@
 package com.example.myapplication.ui.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -69,6 +71,12 @@ fun SettingsScreen(
         viewModel.messages.collect { snackbar.showSnackbar(it) }
     }
     val configs = viewModel.configs
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip"),
+    ) { uri -> if (uri != null) viewModel.exportBackup(uri) }
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri -> if (uri != null) viewModel.importBackup(uri) }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },
@@ -129,6 +137,32 @@ fun SettingsScreen(
                                 )
                             }
                             Text(stringResource(R.string.refresh_models))
+                        }
+                    }
+                }
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(stringResource(R.string.backup_title), style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            stringResource(R.string.backup_note),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = { exportLauncher.launch("chat-backup.zip") },
+                                modifier = Modifier.weight(1f),
+                            ) { Text(stringResource(R.string.backup_export)) }
+                            Button(
+                                onClick = { importLauncher.launch(arrayOf("application/zip")) },
+                                modifier = Modifier.weight(1f),
+                            ) { Text(stringResource(R.string.backup_import)) }
                         }
                     }
                 }

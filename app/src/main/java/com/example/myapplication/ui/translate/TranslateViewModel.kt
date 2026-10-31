@@ -347,8 +347,11 @@ class TranslateViewModel @Inject constructor(
             return
         }
         liveJob = viewModelScope.launch {
-            val key = settingsRepository.get(ProviderId.DOUBAO).speechApiKey.trim()
-            if (key.isEmpty()) {
+            val config = settingsRepository.get(ProviderId.DOUBAO)
+            val key = config.speechApiKey.trim()
+            val appId = config.speechAppId.trim()
+            val accessToken = config.speechAccessToken.trim()
+            if (key.isEmpty() && (appId.isEmpty() || accessToken.isEmpty())) {
                 state = state.copy(message = context.getString(R.string.need_speech_key))
                 return@launch
             }
@@ -376,6 +379,8 @@ class TranslateViewModel @Inject constructor(
                         targetLanguage = state.liveTargetLang,
                         speakerId = state.liveVoice.speakerId,
                         audio = audio,
+                        appId = appId,
+                        accessToken = accessToken,
                     ) { event -> applyLive(event) }
                 } finally {
                     audio.close()

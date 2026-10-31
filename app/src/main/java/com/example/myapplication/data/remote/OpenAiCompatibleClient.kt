@@ -136,6 +136,7 @@ class OpenAiCompatibleClient @Inject constructor(
         if (isMissingModel(code, codeName, parsed.orEmpty())) {
             return context.getString(R.string.model_not_available)
         }
+        mapCommonError(code, parsed.orEmpty())?.let { return it }
         return parsed?.takeIf { it.isNotBlank() } ?: context.getString(R.string.request_failed_code, code)
     }
 
@@ -143,7 +144,24 @@ class OpenAiCompatibleClient @Inject constructor(
         if (isMissingModel(404, "", message)) {
             return context.getString(R.string.model_not_available)
         }
+        mapCommonError(0, message)?.let { return it }
         return message.ifBlank { context.getString(R.string.parse_model_failed) }
+    }
+
+    /** 把服务端英文错误归一到能直接指导操作的中文提示。 */
+    private fun mapCommonError(httpCode: Int, message: String): String? {
+        val blob = message.lowercase()
+        return when {
+            blob.contains("overdue") || blob.contains("arrear") ||
+                blob.contains("insufficient balance") || blob.contains("欠费") ||
+                blob.contains("余额不足") ->
+                context.getString(R.string.error_account_overdue)
+            httpCode == 401 || blob.contains("authentication fails") ||
+                blob.contains("invalid api key") || blob.contains("invalid authentication") ->
+                context.getString(R.string.error_api_key_invalid)
+            httpCode == 403 -> context.getString(R.string.error_forbidden)
+            else -> null
+        }
     }
 
     private fun isMissingModel(httpCode: Int, apiCode: String, message: String): Boolean {

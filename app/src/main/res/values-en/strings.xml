@@ -32,6 +32,8 @@
     <string name="empty_reply">(Empty reply)</string>
     <string name="stop_reading">Stop reading</string>
     <string name="read_message">Read message</string>
+    <string name="copy_message">Copy message</string>
+    <string name="copy_code">Copy code</string>
     <string name="retry">Retry</string>
     <string name="hide_reasoning">Hide reasoning</string>
     <string name="show_reasoning">Show reasoning</string>
@@ -243,6 +245,9 @@
     <string name="draw_default_prompt">Generate a beautiful image</string>
     <string name="drawing_in_progress">Generating image…</string>
     <string name="image_gen_empty">The image API returned no image</string>
+    <string name="error_account_overdue">The Volcengine account is in arrears or out of balance. Top up in the billing console and retry.</string>
+    <string name="error_api_key_invalid">Invalid API key. Re-enter it in Settings.</string>
+    <string name="error_forbidden">No permission (403). Check that the service is enabled and the account is in good standing.</string>
     <string name="image_gen_failed">Image generation failed</string>
     <string name="refresh_models">Refresh model list</string>
     <string name="refresh_models_note">Fetches the latest models from providers. Ark results are filtered by common prefixes; unactivated models may still fail.</string>
@@ -253,4 +258,25 @@
     <string name="close_preview">Close preview</string>
     <string name="generation_interrupted">The previous reply was interrupted</string>
     <string name="avatar_me">Me</string>
+    <string name="section_voice">Voice chat</string>
+    <string name="voice_chat_title">Voice chat</string>
+    <string name="voice_you">You</string>
+    <string name="voice_assistant">Doubao</string>
+    <string name="voice_bot_name">Doubao</string>
+    <string name="voice_start">Start talking</string>
+    <string name="voice_stop">End conversation</string>
+    <string name="voice_connecting">Connecting…</string>
+    <string name="voice_listening">Listening</string>
+    <string name="voice_hint">Start and just talk; Doubao answers with voice</string>
+    <string name="voice_failed">Voice chat failed</string>
+    <string name="voice_failed_detail">Voice chat failed (%1$s)</string>
+    <string name="voice_connect_failed">Connection failed</string>
+    <string name="voice_not_enabled">End-to-end speech is not enabled for this AppID. Check the Doubao Speech console.</string>
+    <string name="backup_title">Backup</string>
+    <string name="backup_note">Export a ZIP with conversations, messages and images; importing adds them as new conversations</string>
+    <string name="backup_export">Export</string>
+    <string name="backup_import">Import</string>
+    <string name="backup_export_done">Exported %1$d conversations</string>
+    <string name="backup_import_done">Imported %1$d conversations</string>
+    <string name="backup_failed">Backup failed (%1$s)</string>
 </resources>

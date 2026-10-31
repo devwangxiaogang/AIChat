@@ -82,7 +82,16 @@ class DoubaoTranslateClient @Inject constructor(
             val root = runCatching { json.parseToJsonElement(raw) }.getOrNull()
             if (!response.isSuccessful) {
                 val detail = root?.errorMessage()?.ifBlank { null } ?: "HTTP ${response.code}"
-                error(context.getString(R.string.translate_failed_detail, detail))
+                val lower = detail.lowercase()
+                val mapped = when {
+                    lower.contains("overdue") || lower.contains("insufficient balance") ||
+                        lower.contains("arrear") || lower.contains("欠费") ->
+                        context.getString(R.string.error_account_overdue)
+                    response.code == 401 -> context.getString(R.string.error_api_key_invalid)
+                    response.code == 403 -> context.getString(R.string.error_forbidden)
+                    else -> context.getString(R.string.translate_failed_detail, detail)
+                }
+                error(mapped)
             }
             root?.outputText()?.trim().orEmpty().ifBlank { error(context.getString(R.string.translate_empty)) }
         }

@@ -114,6 +114,10 @@ import com.example.myapplication.ui.localizedSummary
 import com.example.myapplication.ui.model.ModelPickerDialog
 import kotlinx.coroutines.launch
 import java.io.File
+import android.content.ClipData
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.toClipEntry
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -127,6 +131,8 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val clipboard = LocalClipboard.current
+    val copyLabel = stringResource(R.string.copy_message)
     var showModels by remember { mutableStateOf(false) }
     var showPersona by remember { mutableStateOf(false) }
     var previewPath by remember { mutableStateOf<String?>(null) }
@@ -303,6 +309,13 @@ fun ChatScreen(
                         speaking = state.speakingId == message.id,
                         onRetry = viewModel::retry,
                         onSpeak = { viewModel.toggleSpeak(message) },
+                        onCopy = {
+                            scope.launch {
+                                clipboard.setClipEntry(
+                                    ClipData.newPlainText(copyLabel, message.content).toClipEntry(),
+                                )
+                            }
+                        },
                         onPreview = { previewPath = it },
                     )
                 }
@@ -657,6 +670,7 @@ private fun MessageBubble(
     speaking: Boolean,
     onRetry: () -> Unit,
     onSpeak: () -> Unit,
+    onCopy: () -> Unit,
     onPreview: (String) -> Unit,
 ) {
     val isUser = message.role == Role.USER
@@ -750,17 +764,27 @@ private fun MessageBubble(
                         }
                     }
                     if (message.content.isNotBlank()) {
-                        IconButton(
-                            onClick = onSpeak,
-                            modifier = Modifier
-                                .align(Alignment.End)
-                                .size(28.dp),
-                        ) {
-                            Icon(
-                                if (speaking) Icons.Filled.Stop else Icons.AutoMirrored.Filled.VolumeUp,
-                                contentDescription = stringResource(if (speaking) R.string.stop_reading else R.string.read_message),
-                                modifier = Modifier.size(16.dp),
-                            )
+                        Row(modifier = Modifier.align(Alignment.End)) {
+                            IconButton(
+                                onClick = onCopy,
+                                modifier = Modifier.size(28.dp),
+                            ) {
+                                Icon(
+                                    Icons.Filled.ContentCopy,
+                                    contentDescription = stringResource(R.string.copy_message),
+                                    modifier = Modifier.size(15.dp),
+                                )
+                            }
+                            IconButton(
+                                onClick = onSpeak,
+                                modifier = Modifier.size(28.dp),
+                            ) {
+                                Icon(
+                                    if (speaking) Icons.Filled.Stop else Icons.AutoMirrored.Filled.VolumeUp,
+                                    contentDescription = stringResource(if (speaking) R.string.stop_reading else R.string.read_message),
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
                         }
                     }
                 }

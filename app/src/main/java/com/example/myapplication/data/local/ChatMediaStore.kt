@@ -61,6 +61,18 @@ class ChatMediaStore @Inject constructor(
         return file.length() / 3 * 4
     }
 
+    /** 恢复备份时把图片写回 chat_media。 */
+    suspend fun saveImported(bytes: ByteArray, mime: String): String = withContext(Dispatchers.IO) {
+        val ext = when {
+            mime.contains("png") -> "png"
+            mime.contains("webp") -> "webp"
+            else -> "jpg"
+        }
+        val file = File(root, "b_${UUID.randomUUID()}.$ext")
+        file.writeBytes(bytes)
+        file.absolutePath
+    }
+
     fun deletePaths(paths: List<String>) {
         paths.forEach { path ->
             runCatching { File(path).takeIf { it.isFile }?.delete() }

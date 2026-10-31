@@ -10,6 +10,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -35,6 +36,7 @@ import kotlinx.coroutines.launch
 enum class AppSection(@StringRes val labelRes: Int, val icon: ImageVector) {
     Chat(R.string.section_chat, Icons.AutoMirrored.Filled.Chat),
     Translate(R.string.section_translate, Icons.Filled.Translate),
+    VoiceChat(R.string.section_voice, Icons.Filled.RecordVoiceOver),
     Settings(R.string.section_settings, Icons.Filled.Settings),
 }
 

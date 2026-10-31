@@ -32,6 +32,8 @@
     <string name="empty_reply">（空回复）</string>
     <string name="stop_reading">停止朗读</string>
     <string name="read_message">朗读消息</string>
+    <string name="copy_message">复制消息</string>
+    <string name="copy_code">复制代码</string>
     <string name="retry">重试</string>
     <string name="hide_reasoning">收起思考</string>
     <string name="show_reasoning">查看思考</string>
@@ -243,6 +245,9 @@
     <string name="draw_default_prompt">请生成一张精美图片</string>
     <string name="drawing_in_progress">正在生成图片…</string>
     <string name="image_gen_empty">生图接口没有返回图片</string>
+    <string name="error_account_overdue">火山引擎账号欠费或余额不足，请到费用中心充值后再试</string>
+    <string name="error_api_key_invalid">API Key 无效，请在设置中重新填写</string>
+    <string name="error_forbidden">没有调用权限（403），请确认服务已开通、账号状态正常</string>
     <string name="image_gen_failed">图片生成失败</string>
     <string name="refresh_models">刷新模型列表</string>
     <string name="refresh_models_note">从服务商拉取最新模型。方舟列表会按常用前缀筛选，个别未开通模型仍可能不可用。</string>
@@ -253,4 +258,25 @@
     <string name="close_preview">关闭预览</string>
     <string name="generation_interrupted">上次生成被中断</string>
     <string name="avatar_me">我</string>
+    <string name="section_voice">语音对话</string>
+    <string name="voice_chat_title">语音对话</string>
+    <string name="voice_you">你说</string>
+    <string name="voice_assistant">豆包</string>
+    <string name="voice_bot_name">豆包</string>
+    <string name="voice_start">开始对话</string>
+    <string name="voice_stop">结束对话</string>
+    <string name="voice_connecting">正在连接…</string>
+    <string name="voice_listening">正在听你说</string>
+    <string name="voice_hint">开始后直接说话，豆包会用语音回答</string>
+    <string name="voice_failed">语音对话失败</string>
+    <string name="voice_failed_detail">语音对话失败（%1$s）</string>
+    <string name="voice_connect_failed">连接失败</string>
+    <string name="voice_not_enabled">端到端语音服务未开通或 AppID 不匹配，请在豆包语音控制台确认已开通「端到端实时语音」</string>
+    <string name="backup_title">会话备份</string>
+    <string name="backup_note">导出为 ZIP（会话、消息与图片），可保存到文件管理器；导入会作为新会话加入</string>
+    <string name="backup_export">导出会话</string>
+    <string name="backup_import">导入会话</string>
+    <string name="backup_export_done">已导出 %1$d 个会话</string>
+    <string name="backup_import_done">已导入 %1$d 个会话</string>
+    <string name="backup_failed">备份失败（%1$s）</string>
 </resources>

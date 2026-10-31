@@ -1,12 +1,14 @@
 package com.example.myapplication.ui.settings
 
 import android.content.Context
+import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.myapplication.R
+import com.example.myapplication.data.ChatBackupManager
 import com.example.myapplication.domain.ModelCatalogRepository
 import com.example.myapplication.domain.SettingsRepository
 import com.example.myapplication.domain.model.ModelChoice
@@ -31,6 +33,7 @@ class SettingsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val settingsRepository: SettingsRepository,
     private val modelCatalog: ModelCatalogRepository,
+    private val backupManager: ChatBackupManager,
 ) : ViewModel() {
     var configs by mutableStateOf<Map<ProviderId, ProviderConfig>?>(null)
         private set
@@ -93,6 +96,28 @@ class SettingsViewModel @Inject constructor(
             messagesFlow.emit(
                 if (error == null) context.getString(R.string.models_refreshed)
                 else error,
+            )
+        }
+    }
+
+    fun exportBackup(uri: Uri) {
+        viewModelScope.launch {
+            messagesFlow.emit(
+                runCatching { backupManager.exportTo(uri) }.fold(
+                    onSuccess = { context.getString(R.string.backup_export_done, it) },
+                    onFailure = { context.getString(R.string.backup_failed, it.message.orEmpty()) },
+                ),
+            )
+        }
+    }
+
+    fun importBackup(uri: Uri) {
+        viewModelScope.launch {
+            messagesFlow.emit(
+                runCatching { backupManager.importFrom(uri) }.fold(
+                    onSuccess = { context.getString(R.string.backup_import_done, it) },
+                    onFailure = { context.getString(R.string.backup_failed, it.message.orEmpty()) },
+                ),
             )
         }
     }
