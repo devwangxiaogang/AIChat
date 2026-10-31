@@ -56,4 +56,12 @@ class ConversationListViewModel @Inject constructor(
     fun delete(id: Long) {
         viewModelScope.launch { repository.deleteConversation(id) }
     }
+
+    fun setPinned(id: Long, pinned: Boolean) {
+        viewModelScope.launch { repository.setPinned(id, pinned) }
+    }
+
+    fun rename(id: Long, title: String) {
+        viewModelScope.launch { repository.renameConversation(id, title) }
+    }
 }

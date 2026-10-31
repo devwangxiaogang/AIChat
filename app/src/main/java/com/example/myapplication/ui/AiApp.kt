@@ -75,6 +75,7 @@ fun AiApp() {
                 ConversationListScreen(
                     onOpenChat = { id -> nav.navigate(Routes.chat(id)) },
                     onNavigate = { section -> nav.openSection(section) },
+                    onOpenBackup = { nav.navigate(Routes.Data) },
                 )
             }
             composable(Routes.Translate) {

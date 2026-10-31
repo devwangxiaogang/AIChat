@@ -331,4 +331,17 @@
     <string name="nav_chat">Chat</string>
     <string name="nav_translate">Translate</string>
     <string name="nav_voice">Voice</string>
+    <string name="quick_backup">Backup</string>
+    <string name="search_hint">Search chats and messages</string>
+    <string name="search_empty">No matching chats</string>
+    <string name="conversation_group_pinned">Pinned</string>
+    <string name="conversation_group_today">Today</string>
+    <string name="conversation_group_earlier">Earlier</string>
+    <string name="pin">Pin</string>
+    <string name="unpin">Unpin</string>
+    <string name="rename">Rename</string>
+    <string name="rename_title">Rename chat</string>
+    <string name="empty_title">No chats yet</string>
+    <string name="empty_body">Start with a question, or add an API key in settings first.</string>
+    <string name="save">Save</string>
 </resources>

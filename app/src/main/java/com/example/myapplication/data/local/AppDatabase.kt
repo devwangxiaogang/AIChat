@@ -11,7 +11,7 @@ import androidx.room.RoomDatabase
         AttachmentEntity::class,
         TranslationEntity::class,
     ],
-    version = 3,
+    version = 4,
     // 导出 schema 到 app/schemas，迁移才能被 room-testing 验证。
     exportSchema = true,
 )

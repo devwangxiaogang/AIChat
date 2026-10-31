@@ -116,6 +116,9 @@ data class Conversation(
     val model: String,
     val systemPrompt: String,
     val updatedAt: Long,
+    val pinned: Boolean = false,
+    /** 最后一条消息预览，列表页用。 */
+    val preview: String? = null,
 )
 
 data class ChatMessage(

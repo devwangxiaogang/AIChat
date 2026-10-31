@@ -331,4 +331,17 @@
     <string name="nav_chat">对话</string>
     <string name="nav_translate">翻译</string>
     <string name="nav_voice">语音</string>
+    <string name="quick_backup">备份</string>
+    <string name="search_hint">搜索会话、消息</string>
+    <string name="search_empty">没有找到相关会话</string>
+    <string name="conversation_group_pinned">置顶</string>
+    <string name="conversation_group_today">今天</string>
+    <string name="conversation_group_earlier">更早</string>
+    <string name="pin">置顶</string>
+    <string name="unpin">取消置顶</string>
+    <string name="rename">重命名</string>
+    <string name="rename_title">重命名会话</string>
+    <string name="empty_title">还没有对话</string>
+    <string name="empty_body">从一个问题开始，或者先到设置里填好 API Key。</string>
+    <string name="save">保存</string>
 </resources>

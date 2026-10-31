@@ -23,6 +23,10 @@ interface ChatRepository {
 
     suspend fun deleteConversation(id: Long)
 
+    suspend fun setPinned(id: Long, pinned: Boolean)
+
+    suspend fun renameConversation(id: Long, title: String)
+
     /** 返回 null 表示已开始生成，否则是需要展示给用户的原因。 */
     suspend fun send(
         conversationId: Long,

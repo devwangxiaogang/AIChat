@@ -63,7 +63,10 @@ object AppModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "ai_chat.db")
-            .addMigrations(com.example.myapplication.data.local.MIGRATION_2_3)
+            .addMigrations(
+                com.example.myapplication.data.local.MIGRATION_2_3,
+                com.example.myapplication.data.local.MIGRATION_3_4,
+            )
             // 未覆盖的跨版本变更才重建，避免丢掉 2→3 的会话数据。
             .fallbackToDestructiveMigration(true)
             .build()

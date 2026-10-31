@@ -9,6 +9,7 @@ import com.example.myapplication.data.local.AttachmentEntity
 import com.example.myapplication.data.local.ChatMediaStore
 import com.example.myapplication.data.local.ConversationDao
 import com.example.myapplication.data.local.ConversationEntity
+import com.example.myapplication.data.local.ConversationSummaryRow
 import com.example.myapplication.data.local.MessageDao
 import com.example.myapplication.data.local.MessageEntity
 import com.example.myapplication.data.remote.DoubaoProvider
@@ -73,7 +74,7 @@ class ChatRepositoryImpl @Inject constructor(
     private val streaming = MutableStateFlow<Map<Long, StreamingText>>(emptyMap())
 
     override fun observeConversations(): Flow<List<Conversation>> =
-        conversationDao.observeAll().map { rows -> rows.map { it.toDomain() } }
+        conversationDao.observeSummaries().map { rows -> rows.map { it.toDomain() } }
 
     override fun observeConversation(id: Long): Flow<Conversation?> =
         conversationDao.observe(id).map { row -> row?.toDomain() }
@@ -134,6 +135,15 @@ class ChatRepositoryImpl @Inject constructor(
             ),
         )
         return null
+    }
+
+    override suspend fun setPinned(id: Long, pinned: Boolean) {
+        conversationDao.setPinned(id, pinned)
+    }
+
+    override suspend fun renameConversation(id: Long, title: String) {
+        val clean = title.trim()
+        if (clean.isNotEmpty()) conversationDao.rename(id, clean)
     }
 
     override suspend fun deleteConversation(id: Long) {
@@ -705,6 +715,17 @@ class ChatRepositoryImpl @Inject constructor(
         model = model,
         systemPrompt = systemPrompt,
         updatedAt = updatedAt,
+    )
+
+    private fun ConversationSummaryRow.toDomain(): Conversation = Conversation(
+        id = id,
+        title = if (isUntitled(title)) "" else title,
+        provider = ProviderId.valueOf(provider),
+        model = model,
+        systemPrompt = systemPrompt,
+        updatedAt = updatedAt,
+        pinned = pinned,
+        preview = preview?.trim()?.replace('\n', ' ')?.take(120),
     )
 
     private fun MessageEntity.toDomain(attachments: List<MessageAttachment> = emptyList()): ChatMessage =

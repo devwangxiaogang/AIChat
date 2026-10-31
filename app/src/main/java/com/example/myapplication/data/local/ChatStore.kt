@@ -19,6 +19,8 @@ data class ConversationEntity(
     val model: String,
     val systemPrompt: String,
     val updatedAt: Long,
+    /** 置顶会话排在列表最前。 */
+    val pinned: Boolean = false,
 )
 
 @Entity(
@@ -67,9 +69,21 @@ data class AttachmentEntity(
     val sortOrder: Int = 0,
 )
 
+/** 列表页用的会话摘要：带最后一条消息预览。 */
+data class ConversationSummaryRow(
+    val id: Long,
+    val title: String,
+    val provider: String,
+    val model: String,
+    val systemPrompt: String,
+    val updatedAt: Long,
+    val pinned: Boolean,
+    val preview: String?,
+)
+
 @Dao
 interface ConversationDao {
-    @Query("SELECT * FROM conversations ORDER BY updatedAt DESC")
+    @Query("SELECT * FROM conversations ORDER BY pinned DESC, updatedAt DESC")
     fun observeAll(): Flow<List<ConversationEntity>>
 
     @Query("SELECT * FROM conversations WHERE id = :id")
@@ -77,6 +91,22 @@ interface ConversationDao {
 
     @Query("SELECT * FROM conversations WHERE id = :id")
     suspend fun get(id: Long): ConversationEntity?
+
+    /** 列表页：会话 + 最后一条消息预览，置顶优先。 */
+    @Query(
+        "SELECT c.id AS id, c.title AS title, c.provider AS provider, c.model AS model, " +
+            "c.systemPrompt AS systemPrompt, c.updatedAt AS updatedAt, c.pinned AS pinned, " +
+            "(SELECT m.content FROM messages m WHERE m.conversationId = c.id " +
+            "ORDER BY m.createdAt DESC, m.id DESC LIMIT 1) AS preview " +
+            "FROM conversations c ORDER BY c.pinned DESC, c.updatedAt DESC",
+    )
+    fun observeSummaries(): Flow<List<ConversationSummaryRow>>
+
+    @Query("UPDATE conversations SET pinned = :pinned WHERE id = :id")
+    suspend fun setPinned(id: Long, pinned: Boolean)
+
+    @Query("UPDATE conversations SET title = :title WHERE id = :id")
+    suspend fun rename(id: Long, title: String)
 
     /** 导出备份时按时间顺序取全部会话。 */
     @Query("SELECT * FROM conversations ORDER BY updatedAt DESC")
