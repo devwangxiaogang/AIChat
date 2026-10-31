@@ -10,6 +10,12 @@ import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
@@ -55,6 +61,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Check
@@ -190,7 +197,7 @@ fun TranslateScreen(
     }
     SectionScaffold(
         section = AppSection.Translate,
-        title = stringResource(R.string.section_translate),
+        title = stringResource(R.string.nav_translate),
         onNavigate = { section ->
             if (section != AppSection.Translate) viewModel.leaveLive()
             onNavigate(section)
@@ -336,7 +343,7 @@ private fun TranslateModeSwitcher(
             .fillMaxWidth()
             .height(48.dp)
             .clip(RoundedCornerShape(24.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .padding(4.dp)
             .selectableGroup(),
     ) {
@@ -354,8 +361,7 @@ private fun TranslateModeSwitcher(
                 .offset(x = indicatorOffset)
                 .width(segmentWidth)
                 .fillMaxHeight()
-                .shadow(2.dp, RoundedCornerShape(20.dp), clip = false)
-                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(20.dp)),
+                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(20.dp)),
         )
         Row(modifier = Modifier.fillMaxSize()) {
             tabs.forEach { (tab, labelRes, icon) ->
@@ -380,7 +386,7 @@ private fun ModeSegment(
     modifier: Modifier = Modifier,
 ) {
     val color = if (selected) {
-        MaterialTheme.colorScheme.primary
+        MaterialTheme.colorScheme.onPrimary
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
@@ -476,6 +482,9 @@ private fun LiveStage(
             } else {
                 CaptionCard(stringResource(R.string.source_label), state.sourceCaption, state.sourcePartial, compact = true)
                 CaptionCard(stringResource(R.string.target_label), state.targetCaption, state.targetPartial, compact = false)
+                if (active) {
+                    LiveWave()
+                }
                 if (state.livePhase == LivePhase.Ended && state.liveSaved) {
                     Text(
                         stringResource(R.string.saved),
@@ -664,11 +673,11 @@ private fun TextSourceCard(
         label = "sourceBorder",
     )
     Surface(
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(22.dp),
         color = MaterialTheme.colorScheme.surface,
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, border, RoundedCornerShape(20.dp)),
+            .border(1.dp, border, RoundedCornerShape(22.dp)),
     ) {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -740,9 +749,11 @@ private fun TextTargetCard(
     onSpeak: () -> Unit,
 ) {
     Surface(
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(22.dp),
         color = MaterialTheme.colorScheme.surface,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f), RoundedCornerShape(22.dp)),
     ) {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -829,7 +840,7 @@ private fun HoldToTalkButton(
     }
     Surface(
         modifier = modifier
-            .height(52.dp)
+            .height(56.dp)
             .clip(RoundedCornerShape(28.dp))
             .pointerInput(enabled, recognizing) {
                 detectTapGestures(
@@ -852,12 +863,11 @@ private fun HoldToTalkButton(
         shape = RoundedCornerShape(28.dp),
         color = when {
             listening -> MaterialTheme.colorScheme.primary
-            recognizing -> MaterialTheme.colorScheme.primaryContainer
-            else -> MaterialTheme.colorScheme.secondaryContainer
+            else -> MaterialTheme.colorScheme.primaryContainer
         },
         contentColor = when {
             listening -> MaterialTheme.colorScheme.onPrimary
-            else -> MaterialTheme.colorScheme.onSecondaryContainer
+            else -> MaterialTheme.colorScheme.onPrimaryContainer
         },
         shadowElevation = if (listening) 4.dp else 0.dp,
     ) {
@@ -1009,8 +1019,8 @@ private fun PrimaryActionButton(
         shape = RoundedCornerShape(28.dp),
         colors = if (stopStyle) {
             ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.secondary,
-                contentColor = MaterialTheme.colorScheme.onSecondary,
+                containerColor = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer,
             )
         } else {
             ButtonDefaults.buttonColors()
@@ -1194,35 +1204,65 @@ private fun RecordDetail(
 private fun RecordSummary(record: TranslationEntity, onOpen: (TranslationEntity) -> Unit) {
     val pair = "${shortLanguageLabel(record.sourceLang)} → ${shortLanguageLabel(record.targetLang)}"
     Surface(
-        modifier = Modifier.fillMaxWidth().clickable { onOpen(record) },
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .clickable { onOpen(record) },
         shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surface,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                    ) {
+                        Text(
+                            stringResource(if (record.kind == "LIVE") R.string.tab_live else R.string.tab_text),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                    }
+                    Text(
+                        recordWhen(record.createdAt, withClock = false),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        pair,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Text(
                     record.targetText.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
                         .ifBlank { stringResource(R.string.no_target) },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyLarge,
                 )
                 Text(
-                    "$pair · ${record.sourceText.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
-                        .ifBlank { stringResource(R.string.no_source) }}",
+                    record.sourceText.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+                        .ifBlank { stringResource(R.string.no_source) },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Text(
-                recordWhen(record.createdAt, withClock = false),
-                modifier = Modifier.padding(start = 12.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -1274,34 +1314,45 @@ private fun LanguageRow(
     onTarget: () -> Unit,
     onSwap: (() -> Unit)?,
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        LanguageChip(source, onSource, Modifier.weight(1f))
-        if (onSwap != null) {
-            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
-                IconButton(onClick = onSwap, modifier = Modifier.size(40.dp)) {
-                    Icon(
-                        Icons.Filled.SwapHoriz,
-                        contentDescription = stringResource(R.string.swap_languages),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            LanguageChip(source, onSource, Modifier.weight(1f))
+            if (onSwap != null) {
+                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+                    IconButton(onClick = onSwap, modifier = Modifier.size(40.dp)) {
+                        Icon(
+                            Icons.Filled.SwapHoriz,
+                            contentDescription = stringResource(R.string.swap_languages),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                 }
             }
+            LanguageChip(target, onTarget, Modifier.weight(1f))
         }
-        LanguageChip(target, onTarget, Modifier.weight(1f))
     }
 }
 
 @Composable
 private fun LanguageChip(label: String, onClick: () -> Unit, modifier: Modifier) {
-    Surface(
-        modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        contentAlignment = Alignment.Center,
     ) {
         Text(
             label,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -1310,17 +1361,33 @@ private fun LanguageChip(label: String, onClick: () -> Unit, modifier: Modifier)
 
 @Composable
 private fun CaptionCard(title: String, committed: String, partial: String, compact: Boolean) {
-    Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        color = if (compact) {
+            MaterialTheme.colorScheme.surfaceContainerLow
+        } else {
+            MaterialTheme.colorScheme.surface
+        },
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.labelLarge,
+                color = if (compact) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.primary
+                },
+            )
             if (committed.isNotBlank()) {
                 Text(
                     committed,
                     modifier = Modifier.padding(top = 8.dp),
                     style = if (compact) {
-                        MaterialTheme.typography.bodyMedium
+                        MaterialTheme.typography.bodyLarge
                     } else {
-                        MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp, lineHeight = 26.sp)
+                        MaterialTheme.typography.titleLarge
                     },
                 )
             }
@@ -1332,6 +1399,37 @@ private fun CaptionCard(title: String, committed: String, partial: String, compa
                     style = MaterialTheme.typography.bodyLarge,
                 )
             }
+        }
+    }
+}
+
+/** 同传时的动态声波。 */
+@Composable
+private fun LiveWave() {
+    val transition = rememberInfiniteTransition(label = "liveWave")
+    val phase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1200, easing = LinearEasing), repeatMode = RepeatMode.Restart),
+        label = "liveWavePhase",
+    )
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(46.dp)
+            .padding(top = 4.dp),
+    ) {
+        val count = 32
+        val gap = size.width / count
+        for (i in 0 until count) {
+            val wave = kotlin.math.abs(kotlin.math.sin(phase * 2f * Math.PI.toFloat() + i * 0.6f))
+            val height = size.height * (0.2f + 0.8f * wave)
+            drawRoundRect(
+                color = Color(0xFF5B6CFF),
+                topLeft = Offset(i * gap + gap * 0.2f, (size.height - height) / 2f),
+                size = Size(gap * 0.6f, height),
+                cornerRadius = CornerRadius(gap * 0.3f),
+            )
         }
     }
 }
