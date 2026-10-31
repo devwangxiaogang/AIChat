@@ -6,6 +6,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.LinearEasing
@@ -35,7 +36,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
@@ -129,6 +129,8 @@ fun VoiceChatScreen(
         onDispose { speech.destroy() }
     }
     val speakingNow = state.holding || state.speaking || voicePhase == VoicePhase.Listening
+    // 语音是底部 Tab：返回键在通话中先挂断，未通话时离开该 Tab。
+    BackHandler { if (state.connected || state.connecting) viewModel.stopSession() else onBack() }
     LaunchedEffect(state.userText, state.assistantText, state.partialUserText, state.error) {
         val last = listState.layoutInfo.totalItemsCount - 1
         if (last >= 0) listState.animateScrollToItem(last)
@@ -150,9 +152,6 @@ fun VoiceChatScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back), tint = TextMain)
-                }
                 Text(
                     stringResource(R.string.voice_chat_title),
                     color = TextMain,
@@ -163,7 +162,7 @@ fun VoiceChatScreen(
                 StatusChip(connected = state.connected, connecting = state.connecting)
                 if (state.connected) {
                     IconButton(onClick = viewModel::stopSession) {
-                        Icon(Icons.Filled.Stop, contentDescription = stringResource(R.string.voice_stop), tint = TextDim)
+                        Icon(Icons.Filled.Stop, contentDescription = stringResource(R.string.voice_stop), tint = Color(0xFFFF8B95))
                     }
                 }
             }
