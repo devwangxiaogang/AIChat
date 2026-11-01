@@ -271,6 +271,7 @@
     <string name="voice_failed">语音对话失败</string>
     <string name="voice_failed_detail">语音对话失败（%1$s）</string>
     <string name="voice_connect_failed">连接失败</string>
+<string name="voice_connect_timeout">连接实时语音超时（10 秒内没有建立会话）：请确认账号已开通「实时语音（Seeduplex）」且网络可达，已切换到按住说话模式</string>
     <string name="voice_not_enabled">端到端语音服务未开通或 AppID 不匹配，请在豆包语音控制台确认已开通「端到端实时语音」</string>
     <string name="backup_title">会话备份</string>
     <string name="backup_note">导出为 ZIP（会话、消息与图片），可保存到文件管理器；导入会作为新会话加入</string>
@@ -307,7 +308,7 @@
     <string name="settings_provider_keys">接入信息</string>
     <string name="settings_realtime_voice">实时语音（Seeduplex）</string>
     <string name="settings_realtime_subtitle">端到端语音对话</string>
-    <string name="settings_realtime_keys_help">实时语音支持新版控制台 API Key，或旧版 AppID + Access Token。</string>
+    <string name="settings_realtime_keys_help">实时语音优先用新版控制台的 API Key；没填 API Key 时才回退到旧版 AppID + Access Token。</string>
     <string name="settings_status_configured">已配置</string>
     <string name="settings_status_missing">未配置</string>
     <string name="settings_status_ready">已加密</string>

@@ -105,7 +105,8 @@ Android 上的 AI 助手：和 DeepSeek、豆包（火山方舟）对话，做�
 | 豆包语音 | 豆包语音控制台 | 语音识别、同声传译、朗读、实时语音对话（Seeduplex） |
 
 - 豆包语音支持新版 `X-Api-Key`，也兼容旧版 **AppID + Access Token** 鉴权（朗读 / 同传 / 识别）。
-- 实时语音需要账号开通 Seeduplex；未开通时应用会给出提示并自动降级。
+- 实时语音对话（Seeduplex）优先用 `X-Api-Key`；只有没填 API Key 时才走旧版 AppID + Access Token（`X-Api-App-ID` / `X-Api-Access-Key` / `X-Api-Resource-Id: volc.speech.dialog`）。
+- 实时语音需要账号开通 Seeduplex；未开通或 10 秒内建连失败时，应用会给出提示并自动降级为「按住说话」。
 
 ---
 

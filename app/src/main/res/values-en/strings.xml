@@ -271,6 +271,7 @@
     <string name="voice_failed">Voice chat failed</string>
     <string name="voice_failed_detail">Voice chat failed (%1$s)</string>
     <string name="voice_connect_failed">Connection failed</string>
+<string name="voice_connect_timeout">Realtime voice timed out (no session in 10s). Check that Seeduplex is enabled and the network is reachable; switched to hold-to-talk.</string>
     <string name="voice_not_enabled">End-to-end speech is not enabled for this AppID. Check the Doubao Speech console.</string>
     <string name="backup_title">Backup</string>
     <string name="backup_note">Export a ZIP with conversations, messages and images; importing adds them as new conversations</string>
@@ -307,7 +308,7 @@
     <string name="settings_provider_keys">Credentials</string>
     <string name="settings_realtime_voice">Realtime voice (Seeduplex)</string>
     <string name="settings_realtime_subtitle">End-to-end voice chat</string>
-    <string name="settings_realtime_keys_help">Realtime voice accepts the new console API key, or legacy AppID + Access Token.</string>
+    <string name="settings_realtime_keys_help">Realtime voice prefers the new console API key; legacy AppID + Access Token is used only when the API key is empty.</string>
     <string name="settings_status_configured">Configured</string>
     <string name="settings_status_missing">Not set</string>
     <string name="settings_status_ready">Encrypted</string>

@@ -1,6 +1,7 @@
 package com.yuguang.lumo.data.remote
 
 import android.content.Context
+import android.util.Base64
 import android.util.Log
 import com.yuguang.lumo.R
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -22,7 +23,6 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
-import java.util.Base64
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -42,6 +42,9 @@ sealed interface VoiceChatEvent {
     data object AssistantAudioDone : VoiceChatEvent
     data object Ended : VoiceChatEvent
     data class Failed(val message: String) : VoiceChatEvent
+
+    /** 会话还活着，只是这一步出错（例如某句音频没识别出来）：提示即可，不挂断。 */
+    data class Recoverable(val message: String) : VoiceChatEvent
 }
 
 /**
@@ -72,7 +75,7 @@ class DoubaoVoiceChatClient @Inject constructor(
             .url(ENDPOINT)
             .header("X-Api-Connect-Id", connectId)
             .header("X-Api-Request-Id", UUID.randomUUID().toString())
-        if (!DoubaoSpeechHeaders.applyAuth(requestBuilder, apiKey, appId, accessToken)) {
+        if (!DoubaoSpeechHeaders.applyRealtimeAuth(requestBuilder, apiKey, appId, accessToken)) {
             error(context.getString(R.string.need_speech_key))
         }
 
@@ -107,9 +110,9 @@ class DoubaoVoiceChatClient @Inject constructor(
                     }
                     "input_audio_buffer.committed" -> Log.d(TAG, "audio committed")
                     "conversation.item.input_audio_transcription.failed" -> {
+                        // 一句话没识别出来不该摧毁整段会话。
                         val message = obj.errorMessage()
-                        onEvent(VoiceChatEvent.Failed(message.ifBlank { context.getString(R.string.voice_failed) }))
-                        webSocket.cancel()
+                        onEvent(VoiceChatEvent.Recoverable(message.ifBlank { context.getString(R.string.voice_failed) }))
                     }
                     "response.output_text.delta" -> {
                         val delta = obj["delta"]?.jsonPrimitive?.contentOrNull.orEmpty()
@@ -118,7 +121,7 @@ class DoubaoVoiceChatClient @Inject constructor(
                     "response.output_audio.delta" -> {
                         val delta = obj["delta"]?.jsonPrimitive?.contentOrNull.orEmpty()
                         if (delta.isNotEmpty()) {
-                            val pcm = runCatching { Base64.getDecoder().decode(delta) }.getOrNull()
+                            val pcm = runCatching { Base64.decode(delta, Base64.DEFAULT) }.getOrNull()
                             if (pcm != null && pcm.isNotEmpty()) {
                                 Log.d(TAG, "audio delta ${pcm.size}")
                                 onEvent(VoiceChatEvent.Audio(pcm))
@@ -134,9 +137,14 @@ class DoubaoVoiceChatClient @Inject constructor(
                     "error" -> {
                         Log.w(TAG, "server error: $text")
                         val message = obj.errorMessage().ifBlank { context.getString(R.string.voice_failed) }
-                        if (!ready.isCompleted) ready.completeExceptionally(IllegalStateException(message))
-                        onEvent(VoiceChatEvent.Failed(message))
-                        webSocket.cancel()
+                        // 建连阶段的错误是致命的；会话建立后只提示，避免一次可恢复错误就断线。
+                        if (!ready.isCompleted) {
+                            ready.completeExceptionally(IllegalStateException(message))
+                            onEvent(VoiceChatEvent.Failed(message))
+                            webSocket.cancel()
+                        } else {
+                            onEvent(VoiceChatEvent.Recoverable(message))
+                        }
                     }
                     else -> Unit
                 }
@@ -144,6 +152,7 @@ class DoubaoVoiceChatClient @Inject constructor(
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 val logId = response?.header("X-Tt-Logid").orEmpty()
+                Log.w(TAG, "connect failed http=${response?.code ?: 0} logid=$logId msg=${t.message}")
                 val detail = describeFailure(response?.code ?: 0, t.message.orEmpty(), logId)
                 if (!ready.isCompleted) ready.completeExceptionally(IllegalStateException(detail, t))
                 onEvent(VoiceChatEvent.Failed(detail))
@@ -230,7 +239,7 @@ class VoiceSession internal constructor(private val socket: WebSocket) {
         if (pcm.isEmpty()) return
         sentBytes += pcm.size
         if (sentBytes % 16_000 < pcm.size) Log.d(TAG, "uplink audio sent ${sentBytes}B")
-        val encoded = Base64.getEncoder().encodeToString(pcm)
+        val encoded = Base64.encodeToString(pcm, Base64.NO_WRAP)
         socket.send(
             buildJsonObject {
                 put("event_id", UUID.randomUUID().toString())

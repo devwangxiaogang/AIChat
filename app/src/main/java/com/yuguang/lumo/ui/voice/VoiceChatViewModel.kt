@@ -33,11 +33,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.Executors
 import javax.inject.Inject
 
 data class VoiceChatUiState(
@@ -114,7 +116,7 @@ class VoiceChatViewModel @Inject constructor(
         connectJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 val config = settingsRepository.get(ProviderId.DOUBAO)
-                val speaker = (if (state.voice == VoiceChoice.CLONE) VoiceChoice.FEMALE else state.voice).ttsSpeakerId
+                val speaker = (if (state.voice == VoiceChoice.CLONE) VoiceChoice.FEMALE else state.voice).let { it.speakerId ?: it.ttsSpeakerId }
                 val created = client.connect(
                     apiKey = config.speechApiKey.trim(),
                     appId = config.speechAppId.trim(),
@@ -129,7 +131,23 @@ class VoiceChatViewModel @Inject constructor(
                         return@withContext
                     }
                     session = created
+                    // 文档要求：麦克风关闭期间不发静音事件，服务端会因收不到音频超时。
+                    created.mute()
                     state = state.copy(connecting = false, connected = true, fallback = false)
+                    startTicker()
+                }
+            } catch (timeout: TimeoutCancellationException) {
+                // 建连超时是失败而不是用户取消：必须让用户看见，并落到兜底链路。
+                withContext(NonCancellable + Dispatchers.Main.immediate) {
+                    if (generation != sessionGeneration) return@withContext
+                    state = state.copy(
+                        connecting = false,
+                        connected = true,
+                        holding = false,
+                        speaking = false,
+                        fallback = true,
+                        error = context.getString(R.string.voice_connect_timeout),
+                    )
                     startTicker()
                 }
             } catch (cancelled: CancellationException) {
@@ -170,12 +188,13 @@ class VoiceChatViewModel @Inject constructor(
         session?.close()
         session = null
         player.release()
-        state = state.copy(connected = false, connecting = false, holding = false, speaking = false, durationSec = 0, amplitude = 0f)
+        state = state.copy(connected = false, connecting = false, holding = false, speaking = false, durationSec = 0, amplitude = 0f, fallback = false)
     }
 
     fun setVoice(voice: VoiceChoice) {
         val normalized = if (voice == VoiceChoice.CLONE) VoiceChoice.FEMALE else voice
         state = state.copy(voice = normalized)
+        viewModelScope.launch { settingsRepository.editSpeech { it.copy(liveVoice = normalized) } }
         applyAudioSettings()
     }
 
@@ -188,7 +207,7 @@ class VoiceChatViewModel @Inject constructor(
     fun applyAudioSettings() {
         val current = session ?: return
         if (state.fallback) return
-        val speaker = (if (state.voice == VoiceChoice.CLONE) VoiceChoice.FEMALE else state.voice).ttsSpeakerId
+        val speaker = (if (state.voice == VoiceChoice.CLONE) VoiceChoice.FEMALE else state.voice).let { it.speakerId ?: it.ttsSpeakerId }
         current.updateAudio(speaker, state.speed)
     }
 
@@ -387,6 +406,7 @@ class VoiceChatViewModel @Inject constructor(
                 stopTicker()
                 state = state.copy(connected = false, holding = false, speaking = false)
             }
+            is VoiceChatEvent.Recoverable -> state = state.copy(error = event.message)
             is VoiceChatEvent.Failed -> {
                 val current = session
                 session = null
@@ -495,65 +515,74 @@ class VoiceChatViewModel @Inject constructor(
         player.release()
     }
 
-    /** 24kHz / 单声道 / 16bit 的 PCM 播放器，收到就写；[release] 后下次 [write] 可重建。 */
+    /** 24kHz / 单声道 / 16bit 的 PCM 播放器；AudioTrack 调用会阻塞，统一在这条线程上串行执行。 */
     private class PcmPlayer {
         private val lock = Any()
         private var track: AudioTrack? = null
+        private val worker = Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "voice-playback").apply { isDaemon = true }
+        }
 
         fun write(pcm: ByteArray) {
-            synchronized(lock) {
-                if (pcm.isEmpty()) return
-                val current = track ?: AudioTrack.Builder()
-                    .setAudioAttributes(
-                        AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_MEDIA)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                            .build(),
-                    )
-                    .setAudioFormat(
-                        AudioFormat.Builder()
-                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                            .setSampleRate(OUTPUT_RATE)
-                            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                            .build(),
-                    )
-                    .setBufferSizeInBytes(
-                        AudioTrack.getMinBufferSize(
-                            OUTPUT_RATE,
-                            AudioFormat.CHANNEL_OUT_MONO,
-                            AudioFormat.ENCODING_PCM_16BIT,
-                        ).coerceAtLeast(OUTPUT_RATE),
-                    )
-                    .setTransferMode(AudioTrack.MODE_STREAM)
-                    .build()
-                    .also {
-                        it.play()
-                        track = it
-                    }
-                current.write(pcm, 0, pcm.size)
-            }
+            if (pcm.isEmpty()) return
+            worker.execute { synchronized(lock) { writeNow(pcm) } }
         }
 
         fun flush() {
-            synchronized(lock) {
-                runCatching {
-                    track?.pause()
-                    track?.flush()
-                    track?.play()
+            worker.execute {
+                synchronized(lock) {
+                    runCatching {
+                        track?.pause()
+                        track?.flush()
+                        track?.play()
+                    }
                 }
             }
         }
 
         fun release() {
-            synchronized(lock) {
-                runCatching {
-                    track?.pause()
-                    track?.flush()
-                    track?.stop()
+            worker.execute {
+                synchronized(lock) {
+                    runCatching {
+                        track?.pause()
+                        track?.flush()
+                        track?.stop()
+                    }
+                    runCatching { track?.release() }
+                    track = null
                 }
-                runCatching { track?.release() }
-                track = null
             }
+        }
+
+        private fun writeNow(pcm: ByteArray) {
+            val current = track ?: AudioTrack.Builder()
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build(),
+                )
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setSampleRate(OUTPUT_RATE)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                        .build(),
+                )
+                .setBufferSizeInBytes(
+                    AudioTrack.getMinBufferSize(
+                        OUTPUT_RATE,
+                        AudioFormat.CHANNEL_OUT_MONO,
+                        AudioFormat.ENCODING_PCM_16BIT,
+                    ).coerceAtLeast(OUTPUT_RATE),
+                )
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .build()
+                .also {
+                    it.play()
+                    track = it
+                }
+            current.write(pcm, 0, pcm.size)
         }
     }
 

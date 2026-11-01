@@ -54,36 +54,42 @@ class SpeechInput(
         capturing = false
         // 松手后立刻进入识别态，避免等采集线程结束才有反馈。
         main.post { onPhase(VoicePhase.Recognizing) }
-        capture?.join(1_000)
+        val thread = capture
+        val audio = recorder
+        val buffer = pcm
         capture = null
-        recorder?.runCatching {
-            stop()
-            release()
-        }
         recorder = null
-        val wav = pcmToWav(pcm.toByteArray())
-        if (wav.size <= WAV_HEADER + MIN_PCM) {
-            main.post {
-                onPhase(VoicePhase.Idle)
-                onError(context.getString(R.string.asr_empty))
+        // join 采集线程、封装 WAV 都在工作线程完成，松手时不再卡住 UI。
+        Thread {
+            thread?.join(1_000)
+            audio?.runCatching {
+                stop()
+                release()
             }
-            return
-        }
-        recognize(
-            wav,
-            { spoken ->
-                main.post {
-                    onText(if (prefix.isBlank()) spoken else prefix + spoken)
-                    onPhase(VoicePhase.Idle)
-                }
-            },
-            { message ->
+            val wav = pcmToWav(buffer.toByteArray())
+            if (wav.size <= WAV_HEADER + MIN_PCM) {
                 main.post {
                     onPhase(VoicePhase.Idle)
-                    onError(message)
+                    onError(context.getString(R.string.asr_empty))
                 }
-            },
-        )
+            } else {
+                recognize(
+                    wav,
+                    { spoken ->
+                        main.post {
+                            onText(if (prefix.isBlank()) spoken else prefix + spoken)
+                            onPhase(VoicePhase.Idle)
+                        }
+                    },
+                    { message ->
+                        main.post {
+                            onPhase(VoicePhase.Idle)
+                            onError(message)
+                        }
+                    },
+                )
+            }
+        }.start()
     }
 
     fun destroy() {
