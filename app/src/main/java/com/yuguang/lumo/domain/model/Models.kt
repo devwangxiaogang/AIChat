@@ -153,7 +153,11 @@ data class ProviderConfig(
     val baseUrl: String,
     val model: String,
     val speechApiKey: String = "",
-    /** 旧版控制台的语音应用凭证；与 [speechAccessToken] 同时填写时优先用它们鉴权。 */
+    /**
+     * 旧版控制台的语音应用凭证。
+     * 与 [speechAccessToken] 同时非空时，ASR/TTS/AST/实时语音一律优先用 AppId+Token；
+     * 否则使用 [speechApiKey]（X-Api-Key）。
+     */
     val speechAppId: String = "",
     val speechAccessToken: String = "",
 )

@@ -6,6 +6,7 @@ import com.yuguang.lumo.R
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
@@ -71,15 +72,7 @@ class DoubaoVoiceChatClient @Inject constructor(
             .url(ENDPOINT)
             .header("X-Api-Connect-Id", connectId)
             .header("X-Api-Request-Id", UUID.randomUUID().toString())
-        val legacyAppKey = appId.trim()
-        val legacyToken = accessToken.trim()
-        if (apiKey.isNotBlank()) {
-            requestBuilder.header("X-Api-Key", apiKey.trim())
-        } else if (legacyAppKey.isNotEmpty() && legacyToken.isNotEmpty()) {
-            requestBuilder
-                .header("X-Api-App-Key", legacyAppKey)
-                .header("X-Api-Access-Key", legacyToken)
-        } else {
+        if (!DoubaoSpeechHeaders.applyAuth(requestBuilder, apiKey, appId, accessToken)) {
             error(context.getString(R.string.need_speech_key))
         }
 
@@ -116,6 +109,7 @@ class DoubaoVoiceChatClient @Inject constructor(
                     "conversation.item.input_audio_transcription.failed" -> {
                         val message = obj.errorMessage()
                         onEvent(VoiceChatEvent.Failed(message.ifBlank { context.getString(R.string.voice_failed) }))
+                        webSocket.cancel()
                     }
                     "response.output_text.delta" -> {
                         val delta = obj["delta"]?.jsonPrimitive?.contentOrNull.orEmpty()
@@ -142,6 +136,7 @@ class DoubaoVoiceChatClient @Inject constructor(
                         val message = obj.errorMessage().ifBlank { context.getString(R.string.voice_failed) }
                         if (!ready.isCompleted) ready.completeExceptionally(IllegalStateException(message))
                         onEvent(VoiceChatEvent.Failed(message))
+                        webSocket.cancel()
                     }
                     else -> Unit
                 }
@@ -161,7 +156,18 @@ class DoubaoVoiceChatClient @Inject constructor(
         }
 
         val socket = http.newWebSocket(requestBuilder.build(), session)
-        withTimeout(SESSION_TIMEOUT_MS) { ready.await() }
+        try {
+            withTimeout(SESSION_TIMEOUT_MS) { ready.await() }
+        } catch (timeout: TimeoutCancellationException) {
+            socket.cancel()
+            throw timeout
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            socket.cancel()
+            throw cancelled
+        } catch (error: Exception) {
+            socket.cancel()
+            throw error
+        }
         VoiceSession(socket)
     }
 

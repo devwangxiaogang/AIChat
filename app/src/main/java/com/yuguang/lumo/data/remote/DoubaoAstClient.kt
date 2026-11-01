@@ -58,13 +58,7 @@ class DoubaoAstClient @Inject constructor(
             .url(ENDPOINT)
             .header("X-Api-Resource-Id", RESOURCE_ID)
             .header("X-Api-Connect-Id", sessionId)
-        if (appId.isNotBlank() && accessToken.isNotBlank()) {
-            requestBuilder
-                .header("X-Api-App-Key", appId.trim())
-                .header("X-Api-Access-Key", accessToken.trim())
-        } else {
-            requestBuilder.header("X-Api-Key", apiKey.trim())
-        }
+        DoubaoSpeechHeaders.applyAuth(requestBuilder, apiKey, appId, accessToken)
         val request = requestBuilder.build()
         val socket = http.newWebSocket(
             request,

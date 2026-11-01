@@ -58,14 +58,7 @@ class DoubaoTtsClient @Inject constructor(
             .url(ENDPOINT)
             .header("X-Api-Resource-Id", RESOURCE_ID)
             .header("X-Api-Request-Id", UUID.randomUUID().toString())
-        if (appId.isNotBlank() && accessToken.isNotBlank()) {
-            // 旧版控制台的应用凭证：账号里开通的语音服务通常只认这种鉴权。
-            requestBuilder
-                .header("X-Api-App-Key", appId.trim())
-                .header("X-Api-Access-Key", accessToken.trim())
-        } else {
-            requestBuilder.header("X-Api-Key", apiKey.trim())
-        }
+        DoubaoSpeechHeaders.applyAuth(requestBuilder, apiKey, appId, accessToken)
         val request = requestBuilder
             .post(body.toString().toRequestBody(JSON))
             .build()

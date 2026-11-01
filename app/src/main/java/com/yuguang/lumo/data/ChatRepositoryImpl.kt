@@ -167,7 +167,8 @@ class ChatRepositoryImpl @Inject constructor(
         }
         val prepared = prepare(conversationId) ?: return context.getString(R.string.conversation_missing)
         val (conversation, provider, config) = prepared
-        val shouldDraw = drawMode || looksLikeDrawIntent(trimmed)
+        // 仅显式画图模式触发生图，避免「画一张…」等口语误劫持普通聊天。
+        val shouldDraw = drawMode
         if (shouldDraw) {
             val doubao = settingsRepository.get(ProviderId.DOUBAO)
             if (doubao.apiKey.isBlank()) return context.getString(R.string.need_doubao_for_draw)
@@ -648,12 +649,6 @@ class ChatRepositoryImpl @Inject constructor(
         }.getOrNull()?.takeIf { it.isNotBlank() }
     }
 
-    private fun looksLikeDrawIntent(text: String): Boolean {
-        if (text.isBlank()) return false
-        val lower = text.lowercase()
-        return DRAW_PATTERNS.any { it.containsMatchIn(lower) || it.containsMatchIn(text) }
-    }
-
     private suspend fun finishCancelled(
         assistantId: Long,
         content: String,
@@ -766,13 +761,5 @@ class ChatRepositoryImpl @Inject constructor(
         private const val STREAM_INTERVAL_MS = 60L
         private const val LEGACY_NEW_CHAT_ZH = "新对话"
         private const val LEGACY_NEW_CHAT_EN = "New chat"
-        private val DRAW_PATTERNS = listOf(
-            Regex("""画(一)?(张|个|幅)"""),
-            Regex("""帮我画"""),
-            Regex("""请画"""),
-            Regex("""生成(一)?(张|幅)?(图|图片|插画|海报|图像)"""),
-            Regex("""\b(draw|paint)\b.+\b(image|picture|illustration)\b""", RegexOption.IGNORE_CASE),
-            Regex("""\b(generate|create)\b.+\b(image|picture)\b""", RegexOption.IGNORE_CASE),
-        )
     }
 }

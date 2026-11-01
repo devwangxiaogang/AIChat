@@ -117,14 +117,7 @@ class DoubaoAsrClient @Inject constructor(
             .header("X-Api-Resource-Id", resourceId)
             .header("X-Api-Request-Id", UUID.randomUUID().toString())
             .header("X-Api-Sequence", "-1")
-        if (appId.isNotEmpty() && accessToken.isNotEmpty()) {
-            // 旧版控制台：AppID + Access Token，账号下开通的服务通常只有这种鉴权可用。
-            requestBuilder
-                .header("X-Api-App-Key", appId)
-                .header("X-Api-Access-Key", accessToken)
-        } else {
-            requestBuilder.header("X-Api-Key", apiKey)
-        }
+        DoubaoSpeechHeaders.applyAuth(requestBuilder, apiKey, appId, accessToken)
         val request = requestBuilder.build()
         val socket = http.newWebSocket(
             request,

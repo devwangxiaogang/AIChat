@@ -51,7 +51,10 @@ object AppModule {
         if (debuggable) {
             val logging = HttpLoggingInterceptor { message ->
                 val secret = message.contains("Authorization", ignoreCase = true) ||
-                    message.contains("Bearer ", ignoreCase = true)
+                    message.contains("Bearer ", ignoreCase = true) ||
+                    message.contains("X-Api-Key", ignoreCase = true) ||
+                    message.contains("X-Api-Access-Key", ignoreCase = true) ||
+                    message.contains("X-Api-App-Key", ignoreCase = true)
                 if (!secret) android.util.Log.d("AiHttp", message)
             }.apply { level = HttpLoggingInterceptor.Level.BASIC }
             builder.addInterceptor(logging)
@@ -98,7 +101,9 @@ object AppModule {
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
             )
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            // Keystore 不可用时退回普通偏好（仍 MODE_PRIVATE，且已从备份排除）。
+            android.util.Log.e("AiSecrets", "EncryptedSharedPreferences unavailable; using plaintext prefs", error)
             context.getSharedPreferences("provider_secrets_plain", Context.MODE_PRIVATE)
         }
     }

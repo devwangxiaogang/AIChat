@@ -32,10 +32,12 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 data class VoiceChatUiState(
@@ -78,6 +80,8 @@ class VoiceChatViewModel @Inject constructor(
     private var captureJob: Job? = null
     private var localJob: Job? = null
     private val player = PcmPlayer()
+    /** 递增后丢弃迟到的 connect / 事件，避免挂断后会话「复活」。 */
+    private var sessionGeneration = 0
 
     private var turnBase = ""
     private var reply = ""
@@ -93,6 +97,8 @@ class VoiceChatViewModel @Inject constructor(
 
     fun startSession() {
         if (state.connecting || session != null) return
+        connectJob?.cancel()
+        val generation = ++sessionGeneration
         state = state.copy(
             connecting = true,
             error = null,
@@ -100,11 +106,11 @@ class VoiceChatViewModel @Inject constructor(
             partialUserText = "",
             assistantText = "",
             fallback = false,
+            durationSec = 0,
         )
         turnBase = ""
         reply = ""
         history.clear()
-        state = state.copy(durationSec = 0)
         connectJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 val config = settingsRepository.get(ProviderId.DOUBAO)
@@ -116,29 +122,46 @@ class VoiceChatViewModel @Inject constructor(
                     voice = speaker,
                     instructions = context.getString(R.string.assistant_prompt),
                     speed = state.speed,
-                ) { event -> handle(event) }
-                session = created
-                state = state.copy(connecting = false, connected = true, fallback = false)
-                startTicker()
+                ) { event -> dispatchVoiceEvent(generation, event) }
+                withContext(Dispatchers.Main.immediate) {
+                    if (generation != sessionGeneration) {
+                        created.close()
+                        return@withContext
+                    }
+                    session = created
+                    state = state.copy(connecting = false, connected = true, fallback = false)
+                    startTicker()
+                }
             } catch (cancelled: CancellationException) {
+                withContext(NonCancellable + Dispatchers.Main.immediate) {
+                    if (generation == sessionGeneration) {
+                        state = state.copy(connecting = false)
+                    }
+                }
                 throw cancelled
             } catch (error: Exception) {
                 // 实时语音不可用（未开通/无权限/网络）时，不挡用户：切到兜底链路
-                val detail = error.message?.takeIf { it.isNotBlank() }
-                state = state.copy(
-                    connecting = false,
-                    connected = true,
-                    holding = false,
-                    speaking = false,
-                    fallback = true,
-                    error = detail,
-                )
-                startTicker()
+                withContext(NonCancellable + Dispatchers.Main.immediate) {
+                    if (generation != sessionGeneration) return@withContext
+                    val detail = error.message?.takeIf { it.isNotBlank() }
+                    state = state.copy(
+                        connecting = false,
+                        connected = true,
+                        holding = false,
+                        speaking = false,
+                        fallback = true,
+                        error = detail,
+                    )
+                    startTicker()
+                }
             }
         }
     }
 
     fun stopSession() {
+        sessionGeneration++
+        connectJob?.cancel()
+        connectJob = null
         stopCapture()
         stopTicker()
         localJob?.cancel()
@@ -158,6 +181,7 @@ class VoiceChatViewModel @Inject constructor(
 
     fun setSpeed(speed: Int) {
         state = state.copy(speed = speed.coerceIn(-50, 100))
+        applyAudioSettings()
     }
 
     /** 已连接时把音色/语速热更新到当前会话（session.update），无需重新开始。 */
@@ -270,6 +294,7 @@ class VoiceChatViewModel @Inject constructor(
         )
         reply = ""
         localJob = viewModelScope.launch {
+            var failed = false
             try {
                 val selected = settingsRepository.startingModel()
                 val config = settingsRepository.get(selected.provider)
@@ -287,6 +312,7 @@ class VoiceChatViewModel @Inject constructor(
                     baseUrl = config.baseUrl,
                     request = ChatRequest(model = selected.model, messages = history.toList()),
                 ).catch { error ->
+                    failed = true
                     state = state.copy(
                         error = error.message?.takeIf { it.isNotBlank() } ?: context.getString(R.string.voice_failed),
                     )
@@ -297,11 +323,14 @@ class VoiceChatViewModel @Inject constructor(
                             val shown = if (base.isBlank()) reply else "$base\n$reply"
                             state = state.copy(assistantText = shown)
                         }
-                        is StreamEvent.Failed -> state = state.copy(error = event.message)
+                        is StreamEvent.Failed -> {
+                            failed = true
+                            state = state.copy(error = event.message)
+                        }
                         else -> Unit
                     }
                 }
-                if (reply.isNotBlank()) {
+                if (!failed && reply.isNotBlank()) {
                     history += WireMessage(Role.ASSISTANT, reply)
                     while (history.size > HISTORY_LIMIT) history.removeAt(0)
                     state = state.copy(speaking = true)
@@ -319,7 +348,14 @@ class VoiceChatViewModel @Inject constructor(
         }
     }
 
-    private fun handle(event: VoiceChatEvent) {
+    private fun dispatchVoiceEvent(generation: Int, event: VoiceChatEvent) {
+        viewModelScope.launch(Dispatchers.Main.immediate) {
+            if (generation != sessionGeneration) return@launch
+            handleOnMain(event)
+        }
+    }
+
+    private fun handleOnMain(event: VoiceChatEvent) {
         when (event) {
             VoiceChatEvent.SessionStarted -> state = state.copy(connected = true, connecting = false)
             is VoiceChatEvent.UserText -> {
@@ -345,12 +381,16 @@ class VoiceChatViewModel @Inject constructor(
             }
             VoiceChatEvent.AssistantAudioDone -> state = state.copy(speaking = false, amplitude = 0f)
             VoiceChatEvent.Ended -> {
+                val current = session
                 session = null
+                current?.close()
                 stopTicker()
                 state = state.copy(connected = false, holding = false, speaking = false)
             }
             is VoiceChatEvent.Failed -> {
+                val current = session
                 session = null
+                current?.close()
                 stopTicker()
                 state = state.copy(
                     connected = true,
@@ -381,7 +421,9 @@ class VoiceChatViewModel @Inject constructor(
             )
             if (record.state != AudioRecord.STATE_INITIALIZED) {
                 record.release()
-                state = state.copy(error = context.getString(R.string.mic_unavailable), holding = false)
+                withContext(Dispatchers.Main.immediate) {
+                    state = state.copy(error = context.getString(R.string.mic_unavailable), holding = false)
+                }
                 return@launch
             }
             val echo = AcousticEchoCanceler.create(record.audioSessionId)?.also { it.enabled = true }
@@ -397,7 +439,10 @@ class VoiceChatViewModel @Inject constructor(
                         val now = android.os.SystemClock.elapsedRealtime()
                         if (now - lastLevelAt >= 80) {
                             lastLevelAt = now
-                            state = state.copy(amplitude = levelOf(buffer, read))
+                            val level = levelOf(buffer, read)
+                            withContext(Dispatchers.Main.immediate) {
+                                state = state.copy(amplitude = level)
+                            }
                         }
                     }
                 }
@@ -438,7 +483,11 @@ class VoiceChatViewModel @Inject constructor(
     }
 
     override fun onCleared() {
+        sessionGeneration++
+        connectJob?.cancel()
+        connectJob = null
         stopCapture()
+        stopTicker()
         localJob?.cancel()
         speechReader.stop()
         session?.close()
@@ -446,15 +495,14 @@ class VoiceChatViewModel @Inject constructor(
         player.release()
     }
 
-    /** 24kHz / 单声道 / 16bit 的 PCM 播放器，收到就写。 */
+    /** 24kHz / 单声道 / 16bit 的 PCM 播放器，收到就写；[release] 后下次 [write] 可重建。 */
     private class PcmPlayer {
         private val lock = Any()
         private var track: AudioTrack? = null
-        private var released = false
 
         fun write(pcm: ByteArray) {
             synchronized(lock) {
-                if (released || pcm.isEmpty()) return
+                if (pcm.isEmpty()) return
                 val current = track ?: AudioTrack.Builder()
                     .setAudioAttributes(
                         AudioAttributes.Builder()
@@ -498,8 +546,6 @@ class VoiceChatViewModel @Inject constructor(
 
         fun release() {
             synchronized(lock) {
-                if (released) return
-                released = true
                 runCatching {
                     track?.pause()
                     track?.flush()

@@ -57,4 +57,20 @@ class SseDecoderTest {
             EndpointUrls.chatCompletions("https://api.deepseek.com/chat/completions", ProviderId.DEEPSEEK),
         )
     }
+
+    @Test
+    fun upgradesNonLocalHttpBaseUrlToHttps() {
+        assertEquals(
+            "https://api.example.com/v1",
+            EndpointUrls.normalizeBaseUrl("http://api.example.com/v1"),
+        )
+        assertEquals(
+            "http://localhost:8080/v1",
+            EndpointUrls.normalizeBaseUrl("http://localhost:8080/v1"),
+        )
+        assertEquals(
+            "https://api.example.com/v1",
+            EndpointUrls.normalizeBaseUrl("https://api.example.com/v1"),
+        )
+    }
 }

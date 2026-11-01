@@ -1,6 +1,7 @@
 package com.yuguang.lumo.data
 
 import android.content.SharedPreferences
+import com.yuguang.lumo.data.remote.EndpointUrls
 import com.yuguang.lumo.domain.SettingsRepository
 import com.yuguang.lumo.domain.model.ProviderConfig
 import com.yuguang.lumo.domain.model.ProviderId
@@ -32,7 +33,7 @@ class SettingsRepositoryImpl @Inject constructor(
     override suspend fun save(config: ProviderConfig) {
         prefs.edit()
             .putString(key(config.provider, "apiKey"), config.apiKey.trim())
-            .putString(key(config.provider, "baseUrl"), config.baseUrl.trim())
+            .putString(key(config.provider, "baseUrl"), EndpointUrls.normalizeBaseUrl(config.baseUrl))
             .putString(key(config.provider, "model"), config.model.trim())
             .putString(key(config.provider, "speechApiKey"), config.speechApiKey.trim())
             .putString(key(config.provider, "speechAppId"), config.speechAppId.trim())
