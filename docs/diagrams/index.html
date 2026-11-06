@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>语光 Lumo · 架构与流程图</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0 auto;
+    max-width: 46rem;
+    padding: 2.5rem 1.25rem 3rem;
+    font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans SC", sans-serif;
+    line-height: 1.7;
+    background: #ffffff;
+    color: #1a1a1a;
+  }
+  h1 { font-size: 1.5rem; margin: 0 0 0.25rem; }
+  p.lede { margin: 0 0 2rem; color: #5c5c5c; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li {
+    padding: 0.9rem 0;
+    border-top: 1px solid #e3e3e3;
+  }
+  li:last-child { border-bottom: 1px solid #e3e3e3; }
+  a { color: #2563eb; text-decoration: none; font-weight: 600; }
+  a:hover { text-decoration: underline; }
+  span.note { display: block; font-weight: 400; color: #5c5c5c; }
+  footer { margin-top: 2.5rem; font-size: 0.875rem; color: #5c5c5c; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #14161a; color: #e8e8e8; }
+    p.lede, span.note, footer { color: #a0a4ab; }
+    li, li:last-child { border-color: #2c3037; }
+    a { color: #7aa7ff; }
+  }
+</style>
+</head>
+<body>
+<h1>语光 Lumo · 架构与流程图</h1>
+<p class="lede">六张交互图，可直接在浏览器中缩放、拖动与查看节点详情。</p>
+<ul>
+  <li><a href="lumo-architecture.html">整体架构</a><span class="note">Compose 页面 → ViewModel → 仓库接口 → Room / 云端服务的分层结构与依赖方向。</span></li>
+  <li><a href="lumo-chat-sse.html">一次 AI 对话请求的时序</a><span class="note">从输入到 SSE 增量回包、消息落库、思考折叠与生图工具回环的完整往返。</span></li>
+  <li><a href="lumo-realtime-voice.html">实时语音一次会话的时序</a><span class="note">从建连鉴权到音频上下行，再到超时与异常降级的完整往返。</span></li>
+  <li><a href="lumo-voice-states.html">实时语音会话状态机</a><span class="note">会话各状态之间的迁移条件与异常分支。</span></li>
+  <li><a href="lumo-local-data.html">本地数据流</a><span class="note">用户输入 → Room / 媒体文件 / 加密偏好 / 模型目录缓存 → 界面与备份。</span></li>
+  <li><a href="lumo-startup-keys.html">启动与密钥配置流程</a><span class="note">冷启动的初始化顺序、密钥读取与首次配置引导的分支。</span></li>
+</ul>
+<footer>由 Archify 生成，随 <code>docs/</code> 目录一起发布到 GitHub Pages。</footer>
+</body>
+</html>
