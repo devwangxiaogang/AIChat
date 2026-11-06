@@ -14,3 +14,6 @@ build/
 *.aab
 *.jks
 *.keystore
+
+# Archify 图源草稿目录（成品已发布到 docs/diagrams）
+.archify/
