@@ -31,16 +31,16 @@ Android 上的 AI 助手：和 DeepSeek、豆包（火山方舟）对话，做�
 
 ## 架构与流程图
 
-六张交互图都可以在浏览器里缩放、拖动并查看节点详情；也可以从 [图集索引](https://devwangxiaogang.github.io/AIChat/diagrams/) 进入。
+六张交互图都可以在浏览器里缩放、拖动并查看节点详情；也可以从 [图集索引](https://devwangxiaogang.github.io/Lumo/diagrams/) 进入。
 
 | 图 | 说明 |
 |---|---|
-| <a href="https://devwangxiaogang.github.io/AIChat/diagrams/lumo-architecture.html"><img src="docs/diagrams/preview/lumo-architecture.png" width="900" alt="语光 Lumo Android 应用整体架构图"></a> | 整体架构：Compose 页面 → ViewModel → 仓库接口 → Room / 云端服务的分层结构与依赖方向。 |
-| <a href="https://devwangxiaogang.github.io/AIChat/diagrams/lumo-chat-sse.html"><img src="docs/diagrams/preview/lumo-chat-sse.png" width="900" alt="语光 Lumo 一次 AI 对话请求的时序图"></a> | 对话时序：从输入到 SSE 增量回包、消息落库、思考折叠与生图工具回环的完整往返。 |
-| <a href="https://devwangxiaogang.github.io/AIChat/diagrams/lumo-realtime-voice.html"><img src="docs/diagrams/preview/lumo-realtime-voice.png" width="900" alt="语光 Lumo 实时语音一次会话的时序图"></a> | 语音时序：从建连鉴权到音频上下行，再到超时与异常降级的完整往返。 |
-| <a href="https://devwangxiaogang.github.io/AIChat/diagrams/lumo-voice-states.html"><img src="docs/diagrams/preview/lumo-voice-states.png" width="900" alt="语光 Lumo 实时语音会话状态机图"></a> | 语音状态机：会话各状态之间的迁移条件与异常分支。 |
-| <a href="https://devwangxiaogang.github.io/AIChat/diagrams/lumo-local-data.html"><img src="docs/diagrams/preview/lumo-local-data.png" width="900" alt="语光 Lumo 本地数据流图"></a> | 本地数据流：用户输入 → Room / 媒体文件 / 加密偏好 / 模型目录缓存 → 界面与备份。 |
-| <a href="https://devwangxiaogang.github.io/AIChat/diagrams/lumo-startup-keys.html"><img src="docs/diagrams/preview/lumo-startup-keys.png" width="900" alt="语光 Lumo 启动与密钥配置流程图"></a> | 启动与密钥：冷启动的初始化顺序、密钥读取与首次配置引导的分支。 |
+| <a href="https://devwangxiaogang.github.io/Lumo/diagrams/lumo-architecture.html"><img src="docs/diagrams/preview/lumo-architecture.png" width="900" alt="语光 Lumo Android 应用整体架构图"></a> | 整体架构：Compose 页面 → ViewModel → 仓库接口 → Room / 云端服务的分层结构与依赖方向。 |
+| <a href="https://devwangxiaogang.github.io/Lumo/diagrams/lumo-chat-sse.html"><img src="docs/diagrams/preview/lumo-chat-sse.png" width="900" alt="语光 Lumo 一次 AI 对话请求的时序图"></a> | 对话时序：从输入到 SSE 增量回包、消息落库、思考折叠与生图工具回环的完整往返。 |
+| <a href="https://devwangxiaogang.github.io/Lumo/diagrams/lumo-realtime-voice.html"><img src="docs/diagrams/preview/lumo-realtime-voice.png" width="900" alt="语光 Lumo 实时语音一次会话的时序图"></a> | 语音时序：从建连鉴权到音频上下行，再到超时与异常降级的完整往返。 |
+| <a href="https://devwangxiaogang.github.io/Lumo/diagrams/lumo-voice-states.html"><img src="docs/diagrams/preview/lumo-voice-states.png" width="900" alt="语光 Lumo 实时语音会话状态机图"></a> | 语音状态机：会话各状态之间的迁移条件与异常分支。 |
+| <a href="https://devwangxiaogang.github.io/Lumo/diagrams/lumo-local-data.html"><img src="docs/diagrams/preview/lumo-local-data.png" width="900" alt="语光 Lumo 本地数据流图"></a> | 本地数据流：用户输入 → Room / 媒体文件 / 加密偏好 / 模型目录缓存 → 界面与备份。 |
+| <a href="https://devwangxiaogang.github.io/Lumo/diagrams/lumo-startup-keys.html"><img src="docs/diagrams/preview/lumo-startup-keys.png" width="900" alt="语光 Lumo 启动与密钥配置流程图"></a> | 启动与密钥：冷启动的初始化顺序、密钥读取与首次配置引导的分支。 |
 
 ---
 
